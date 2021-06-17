@@ -23,6 +23,9 @@
 # 0-indexed, so squares are 0 through 13 inclusive. There is no special notation for a
 # capture.
 
+# Imports.
+import functools
+
 # Define constants.
 BOARD_SIZE = 16  # number of squares on the board.
 
@@ -48,11 +51,13 @@ def opposite_color(color):  # helper function to return opposite color.
     return "b" if color == "w" else "w"
 
 
+@functools.lru_cache(maxsize=65536)
 def get_pieces(position):  # return a set of all pieces present in a given position.
     board = list(position.split(" ")[0])
     return {square for square in board if square.upper() in NOTATION_PIECES}
 
 
+@functools.lru_cache(maxsize=65536)
 def check_position(position):
     """Check if a position is an ended game, via stalemate or checkmate. Returns a tuple
     where the first element is "w" or "b" to indicate a winner, "d" to indicate a draw,
@@ -66,7 +71,7 @@ def check_position(position):
     board, active, halfmove, fullmove = position.split(" ")
     moves = get_moves(position, active)
     if len(moves) == 0:  # no valid moves.
-        if is_in_check(position, active):  # see whether this is checkmate or stalemate.
+        if is_in_check(board, active):  # see whether this is checkmate or stalemate.
             return (opposite_color(active), "checkmate")
         else:
             return ("d", "stalemate")
@@ -78,10 +83,10 @@ def check_position(position):
     return (None, None)
 
 
-def get_attacked_squares(position, player):
+@functools.lru_cache(maxsize=65536)
+def get_attacked_squares_cacheable(board, player):
     """Get a list of squares attacked by the given player. Includes squares occupied by
     pieces belonging to both players. No piece attacks its own square."""
-    board = list(position.split(" ")[0])
     player = player == "w"  # for boolean convenience, True if considering white.
     attacked_squares = set()  # set of attacked squares.
     for i, square in enumerate(board):
@@ -121,20 +126,27 @@ def get_attacked_squares(position, player):
     return attacked_squares
 
 
-def is_in_check(position, player):
-    """Return true if the given player is in check in the given position. Assumes that
+def get_attacked_squares(board, player):
+    """Get a list of squares attacked by the given player. Includes squares occupied by
+    pieces belonging to both players. No piece attacks its own square."""
+    attacked_squares = get_attacked_squares_cacheable("".join(board), player)
+    return attacked_squares
+
+
+@functools.lru_cache(maxsize=65536)
+def is_in_check(board, player):
+    """Return true if the given player is in check in the given board. Assumes that
     the position is valid."""
-    board = position.split(" ")[0]
     king_position = board.find("K" if player == "w" else "k")
-    attacked_squares = get_attacked_squares(position, ("b" if player == "w" else "w"))
+    attacked_squares = get_attacked_squares(board, ("b" if player == "w" else "w"))
     return king_position in attacked_squares
 
 
-def get_moves(position, player):
+@functools.lru_cache(maxsize=65536)
+def get_moves_cacheable(board, player):
     """Get a list of tuples representing all legal moves by the given player."""
-    board = list(position.split(" ")[0])
     enemy_attacked_squares = get_attacked_squares(
-        position, opposite_color(player)
+        board, opposite_color(player)
     )  # get squares the enemy is attacking.
     player = player == "w"  # for boolean convenience, True if considering white.
     moves = set()  # set of possible moves.
@@ -202,8 +214,15 @@ def get_moves(position, player):
     moves = {
         move
         for move in moves
-        if not is_in_check(apply_move(position, move), "w" if player else "b")
+        if not is_in_check(apply_move_board(board, move), "w" if player else "b")
     }  # eliminate moves that result in check.
+    return moves
+
+
+def get_moves(position, player):
+    """Get a list of tuples representing all legal moves by the given player."""
+    board = position.split(" ")[0]
+    moves = get_moves_cacheable("".join(board), player)
     return moves
 
 
@@ -213,6 +232,7 @@ def get_current_moves(position):
     return get_moves(position, active)
 
 
+@functools.lru_cache(maxsize=65536)
 def apply_move(position, move):
     """Naively apply a move to the position; i.e., assume the position and move are both
     valid and legal."""
@@ -240,3 +260,13 @@ def apply_move(position, move):
     active = "w" if active == "b" else "b"
 
     return " ".join(str(elem) for elem in [board, active, halfmove, fullmove])
+
+
+@functools.lru_cache(maxsize=65536)
+def apply_move_board(board, move):
+    """Naively apply a move to the board; i.e., assume the position and move are both
+    valid and legal."""
+    start, end = move
+    board = list(board)
+    board[start], board[end] = NOTATION_EMPTY, board[start]  # swap start, end.
+    return "".join(board)

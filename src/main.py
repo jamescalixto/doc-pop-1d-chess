@@ -48,21 +48,30 @@ def run_game(verbose=True):
 
 
 def run_games(num_games):
-    start = timer()
-    c = Counter()
-    for n in range(num_games):
-        outcome = run_game(verbose=False)
-        c[outcome[0]] += 1
-        print(n, outcome)
-    end = timer()
-    elapsed = end - start
-    print("Match record:", "-".join(str(i) for i in [c["w"], c["b"], c["d"]]))
-    print(
-        "Elapsed: {}s ({}s/game)".format(
-            round(elapsed, 2), round(elapsed / num_games, 3)
+    try:
+        start = timer()
+        c = Counter()
+        for n in range(num_games):
+            outcome = run_game(verbose=False)
+            c[outcome[0]] += 1
+            print(n, outcome)
+        end = timer()
+        elapsed = end - start
+        print("Match record:", "-".join(str(i) for i in [c["w"], c["b"], c["d"]]))
+        print(
+            "Elapsed: {}s ({}s/game)".format(
+                round(elapsed, 2), round(elapsed / num_games, 3)
+            )
         )
-    )
+    except:
+        print(c)
+        print("Match record:", "-".join(str(i) for i in [c["w"], c["b"], c["d"]]))
+        print(
+            "Elapsed: {}s ({}s/game)".format(
+                round(elapsed, 2), round(elapsed / num_games, 3)
+            )
+        )
 
 
-run_games(1000000)
+run_games(2500000)
 # 220-241-539
