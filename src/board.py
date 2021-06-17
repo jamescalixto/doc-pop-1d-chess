@@ -33,6 +33,12 @@ PAWN_START_BLACK = 10
 NOTATION_PIECES = {"K", "Q", "R", "B", "N", "P"}
 NOTATION_EMPTY = "."
 
+INSUFFICIENT_MATERIAL_SETS = [
+    {"K", "k"},
+    {"K", "k", "b"},
+    {"K", "k", "B"},
+]  # cases for which there is no potential mating attack.
+
 
 def index_valid(i):  # helper function to check valid index.
     return 0 <= i < BOARD_SIZE
@@ -40,6 +46,11 @@ def index_valid(i):  # helper function to check valid index.
 
 def opposite_color(color):  # helper function to return opposite color.
     return "b" if color == "w" else "w"
+
+
+def get_pieces(position):  # return a set of all pieces present in a given position.
+    board = list(position.split(" ")[0])
+    return {square for square in board if square.upper() in NOTATION_PIECES}
 
 
 def check_position(position):
@@ -59,9 +70,11 @@ def check_position(position):
             return (opposite_color(active), "checkmate")
         else:
             return ("d", "stalemate")
-    if halfmove == 51:
+    if int(halfmove) == 51:
         return ("d", "50-move rule")
-
+    pieces = get_pieces(position)
+    if pieces in INSUFFICIENT_MATERIAL_SETS:
+        return ("d", "insufficient material")
     return (None, None)
 
 
@@ -154,8 +167,10 @@ def get_moves(position, player):
 
             if square.upper() == "K":
                 for test_i in [i - 1, i + 1]:
-                    if test_i not in enemy_attacked_squares and is_not_same_color(
-                        test_i
+                    if (
+                        index_valid(test_i)
+                        and test_i not in enemy_attacked_squares
+                        and is_not_same_color(test_i)
                     ):  # king can't move into check.
                         moves.add((i, test_i))
             if square.upper() == "R" or square.upper() == "Q":
@@ -166,17 +181,18 @@ def get_moves(position, player):
                 traverse(2)
             if square.upper() == "N":
                 for test_i in [i - 3, i - 2, i + 2, i + 3]:
-                    if is_not_same_color(test_i):
+                    if index_valid(test_i) and is_not_same_color(test_i):
                         moves.add((i, test_i))
             if square.upper() == "P":
                 pawn_start = PAWN_START_WHITE if player else PAWN_START_BLACK
                 increment = 1 if player else -1
-                if is_not_same_color(i + increment):
+                if index_valid(i + increment) and is_not_same_color(i + increment):
                     moves.add((i, i + increment))
                 if i == pawn_start:
                     if (
                         board[i + increment] == NOTATION_EMPTY
                         and board[i + increment * 2] == NOTATION_EMPTY
+                        and index_valid(i + increment * 2)
                     ):
                         moves.add((i, i + increment * 2))
 
@@ -189,6 +205,12 @@ def get_moves(position, player):
         if not is_in_check(apply_move(position, move), "w" if player else "b")
     }  # eliminate moves that result in check.
     return moves
+
+
+def get_current_moves(position):
+    """Get a list of tuples representing all legal moves by the current player."""
+    board, active, halfmove, fullmove = position.split(" ")
+    return get_moves(position, active)
 
 
 def apply_move(position, move):
@@ -218,9 +240,3 @@ def apply_move(position, move):
     active = "w" if active == "b" else "b"
 
     return " ".join(str(elem) for elem in [board, active, halfmove, fullmove])
-
-
-print(apply_move(START_POSITION, (4, 7)))
-print(get_moves(START_POSITION, "w"))
-
-print(get_moves("K......Nr......w w 0 1", "w"))
