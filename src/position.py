@@ -1,4 +1,4 @@
-# The board is represented in notation similar to FEN notation, but with a few
+# The position is represented in notation similar to FEN notation, but with a few
 # notable differences. A "record" contains a particular game position, all in a single
 # text line.
 #
@@ -24,12 +24,14 @@
 # capture.
 
 # Imports.
-import functools
+import functools  # generous use of caching to speed up repeated tests.
 
-# Define constants.
+CACHE_SIZE = 1048576  # size of LRU caching for functions.
+
 BOARD_SIZE = 16  # number of squares on the board.
-
 START_POSITION = "KQRBNP....pnbrqk w 0 1"
+
+# 0-indexed start positions of pawns. Used to determine if they can move two spaces.
 PAWN_START_WHITE = 5
 PAWN_START_BLACK = 10
 
@@ -51,13 +53,14 @@ def opposite_color(color):  # helper function to return opposite color.
     return "b" if color == "w" else "w"
 
 
-@functools.lru_cache(maxsize=65536)
-def get_pieces(position):  # return a set of all pieces present in a given position.
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def get_pieces(position):
+    """Return a set of all pieces present in a given position."""
     board = list(position.split(" ")[0])
     return {square for square in board if square.upper() in NOTATION_PIECES}
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=CACHE_SIZE)
 def check_position(position):
     """Check if a position is an ended game, via stalemate or checkmate. Returns a tuple
     where the first element is "w" or "b" to indicate a winner, "d" to indicate a draw,
@@ -69,13 +72,13 @@ def check_position(position):
 
     Threefold repetition cannot be tested within a single position."""
     board, active, halfmove, fullmove = position.split(" ")
-    moves = get_moves(position, active)
+    moves = get_moves(board, active)
     if len(moves) == 0:  # no valid moves.
         if is_in_check(board, active):  # see whether this is checkmate or stalemate.
             return (opposite_color(active), "checkmate")
         else:
             return ("d", "stalemate")
-    if int(halfmove) == 51:
+    if int(halfmove) >= 51:
         return ("d", "50-move rule")
     pieces = get_pieces(position)
     if pieces in INSUFFICIENT_MATERIAL_SETS:
@@ -83,8 +86,8 @@ def check_position(position):
     return (None, None)
 
 
-@functools.lru_cache(maxsize=65536)
-def get_attacked_squares_cacheable(board, player):
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def get_attacked_squares(board, player):
     """Get a list of squares attacked by the given player. Includes squares occupied by
     pieces belonging to both players. No piece attacks its own square."""
     player = player == "w"  # for boolean convenience, True if considering white.
@@ -122,18 +125,11 @@ def get_attacked_squares_cacheable(board, player):
                     attacked_squares.add(i - 1)
     attacked_squares = {
         square for square in attacked_squares if index_valid(square)
-    }  # trim squares outside board bounds.
+    }  # remove squares outside board bounds.
     return attacked_squares
 
 
-def get_attacked_squares(board, player):
-    """Get a list of squares attacked by the given player. Includes squares occupied by
-    pieces belonging to both players. No piece attacks its own square."""
-    attacked_squares = get_attacked_squares_cacheable("".join(board), player)
-    return attacked_squares
-
-
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=CACHE_SIZE)
 def is_in_check(board, player):
     """Return true if the given player is in check in the given board. Assumes that
     the position is valid."""
@@ -142,8 +138,8 @@ def is_in_check(board, player):
     return king_position in attacked_squares
 
 
-@functools.lru_cache(maxsize=65536)
-def get_moves_cacheable(board, player):
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def get_moves(board, player):
     """Get a list of tuples representing all legal moves by the given player."""
     enemy_attacked_squares = get_attacked_squares(
         board, opposite_color(player)
@@ -200,7 +196,7 @@ def get_moves_cacheable(board, player):
                 increment = 1 if player else -1
                 if index_valid(i + increment) and is_not_same_color(i + increment):
                     moves.add((i, i + increment))
-                if i == pawn_start:
+                if i == pawn_start:  # check if the pawn can move two spaces.
                     if (
                         board[i + increment] == NOTATION_EMPTY
                         and board[i + increment * 2] == NOTATION_EMPTY
@@ -219,23 +215,27 @@ def get_moves_cacheable(board, player):
     return moves
 
 
-def get_moves(position, player):
-    """Get a list of tuples representing all legal moves by the given player."""
-    board = position.split(" ")[0]
-    moves = get_moves_cacheable("".join(board), player)
-    return moves
-
-
 def get_current_moves(position):
     """Get a list of tuples representing all legal moves by the current player."""
     board, active, halfmove, fullmove = position.split(" ")
-    return get_moves(position, active)
+    return get_moves(board, active)
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def apply_move_board(board, move):
+    """Naively apply a move to the board; i.e., assume the position and move are both
+    valid and legal. Used when extraneous details of the position do not matter; i.e.
+    when testing check."""
+    start, end = move
+    board = list(board)
+    board[start], board[end] = NOTATION_EMPTY, board[start]  # swap start, end.
+    return "".join(board)
+
+
+@functools.lru_cache(maxsize=CACHE_SIZE)
 def apply_move(position, move):
-    """Naively apply a move to the position; i.e., assume the position and move are both
-    valid and legal."""
+    """Naively apply a move to the position; i.e., assume the position and move are
+    both valid and legal."""
     start, end = move
     board, active, halfmove, fullmove = position.split(" ")
 
@@ -252,21 +252,9 @@ def apply_move(position, move):
         fullmove += 1
 
     # Update board from move.
-    board = list(board)
-    board[start], board[end] = NOTATION_EMPTY, board[start]  # swap start, end.
-    board = "".join(board)
+    board = apply_move_board(board, move)
 
     # Update player to move.
     active = "w" if active == "b" else "b"
 
     return " ".join(str(elem) for elem in [board, active, halfmove, fullmove])
-
-
-@functools.lru_cache(maxsize=65536)
-def apply_move_board(board, move):
-    """Naively apply a move to the board; i.e., assume the position and move are both
-    valid and legal."""
-    start, end = move
-    board = list(board)
-    board[start], board[end] = NOTATION_EMPTY, board[start]  # swap start, end.
-    return "".join(board)
