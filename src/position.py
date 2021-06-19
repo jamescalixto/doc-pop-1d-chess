@@ -285,3 +285,13 @@ def apply_move(position, move):
     active = "w" if active == "b" else "b"
 
     return " ".join(str(elem) for elem in [board, active, halfmove, fullmove])
+
+
+def playback_moves(position, moves):
+    """Given a position and an iterable of moves, print a nicely formatted playback
+    of those moves, applying them naively."""
+    print("0123456789012345")  # makes it easier to see move indices.
+    print(position)
+    for move in moves:
+        position = apply_move(position, move)
+        print(position, move)
