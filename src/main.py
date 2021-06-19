@@ -1,6 +1,6 @@
 import position as Position
+import statistics as stats
 from collections import Counter
-import random
 from timeit import default_timer as timer
 
 from ai_random import move as ai_random
@@ -8,7 +8,7 @@ from ai_greedy import move as ai_greedy
 
 # Set up AI for each side.
 AI_WHITE = ai_random
-AI_BLACK = ai_greedy
+AI_BLACK = ai_random
 
 
 def run_game(verbose=True, check_valid=False):
@@ -49,36 +49,51 @@ def run_game(verbose=True, check_valid=False):
             print_verbose(state)
             break
 
-    return state
+    game_length = int(position.split(" ")[3])  # length of a game in fullmoves.
+    return state, game_length
 
 
 def run_games(num_games):
     """Run multiple games of chess."""
 
-    def print_games_info(c, elapsed):  # helper function to print game information.
+    def print_games_info(
+        c, elapsed, game_lengths
+    ):  # helper function to print game information.
         print("Match record:", "-".join(str(i) for i in [c["w"], c["b"], c["d"]]))
         print(
             "Elapsed: {}s ({}s/game)".format(
                 round(elapsed, 2), round(elapsed / num_games, 3)
             )
         )
+        print("Game length information (in fullmoves):")
+        print(
+            "min: {}, max: {}, mean: {:.2f}, stdev: {:.2f}, median: {}".format(
+                min(game_lengths),
+                max(game_lengths),
+                stats.mean(game_lengths),
+                stats.stdev(game_lengths),
+                stats.median(game_lengths),
+            )
+        )
 
     try:
         start = timer()
         c = Counter()
+        game_lengths = []
         for n in range(num_games):
-            outcome = run_game(verbose=False)
-            c[outcome[0]] += 1
-            print(n, outcome)
+            state, game_length = run_game(verbose=False)
+            c[state[0]] += 1
+            game_lengths.append(game_length)
+            print(n, state, game_length)
         end = timer()
         elapsed = end - start  # elapsed time to run all games.
-        print_games_info(c, elapsed)
+        print_games_info(c, elapsed, game_lengths)
 
     except Exception as e:
         # In case there's an exception, try to salvage the run data.
         print(e)
         print(c)
-        print_games_info(c, elapsed)
+        print_games_info(c, elapsed, game_lengths)
 
 
-run_games(100)
+run_games(100000)
