@@ -79,3 +79,42 @@ def test_check_position():
     }
     for test in tests:
         assert Position.check_position(test) == tests[test]
+
+
+def test_get_attacked_squares():
+    tests = {
+        ("KQRBNP....pnbrqk", "w"): set([0, 1, 2, 3, 5, 6, 7]),
+        ("KQRBNP....pnbrqk", "b"): set([15, 14, 13, 12, 10, 9, 8]),
+        ("K..............k", "w"): set([1]),
+        ("K.............k.", "b"): set([13, 15]),
+        ("B.P.............", "w"): set([2, 3]),
+        ("BP..............", "w"): set([2, 4, 6, 8, 10, 12, 14]),
+        ("QP..............", "w"): set([1, 2, 4, 6, 8, 10, 12, 14]),
+        ("Q.P.............", "w"): set([1, 2, 3]),
+        ("NP..............", "w"): set([2, 3]),
+        ("N.P.............", "w"): set([2, 3]),
+        ("......P.R.p.....", "w"): set([6, 7, 9, 10]),
+        ("..........p.....", "b"): set([9]),
+        ("........p.......", "b"): set([7]),
+    }
+    for test in tests:
+        assert Position.get_attacked_squares(*test) == tests[test]
+
+
+def test_is_in_check():
+    tests = {
+        ("KQRBNP....pnbrqk", "w"): False,
+        ("KQRBNP....pnbrqk", "b"): False,
+        ("K.b............k", "w"): True,
+        ("K.b............k", "b"): False,
+        ("K......rR......k", "w"): True,  # these two shouldn't happen in a real game.
+        ("K......rR......k", "b"): True,
+        ("......Kp.......k", "w"): True,
+        ("......Kp.......k", "b"): False,
+        ("...K........Pk..", "w"): False,
+        ("...K........Pk..", "b"): True,
+        ("...K.......P.k..", "w"): False,
+        ("...K.......P.k..", "b"): False,
+    }
+    for test in tests:
+        assert Position.is_in_check(*test) == tests[test]
