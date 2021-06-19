@@ -84,6 +84,23 @@ def check_position(position):
     or None to indicate that the game is not ended. The second element of the tuple is
     a more verbose explanation, etc. "50-move rule".
 
+    Important precondition: this function assumes that the given position has been
+    generated from an actual chess game and ONLY checks if the player to move has been
+    checkmated.
+
+    E.g., in a real game both players cannot be in checkmate at the same time, as this
+    means that either the game did not stop at a previous checkmate or that one player
+    played a move that resulted in both players being in checkmate. This attempts to
+    handle these situations by checking if the player to move is checkmated first, but
+    in a real game the previous turn would have been prevented.
+
+    An example of this:
+    "K.......N.b...kr w 39 20", white plays (9, 12) ->
+    "K.........bN..kr b 40 20"
+    white has successfully checkmated black, and this function will return
+    ("w", "checkmate) for the second position, but that move is illegal and would not
+    happen in a real game.
+
     Unlike the official rules of chess, the 50-move rule is automatically enforced as a
     draw.
 
