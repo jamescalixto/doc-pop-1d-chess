@@ -81,4 +81,4 @@ def run_games(num_games):
         print_games_info(c, elapsed)
 
 
-run_games(1000)
+run_games(100)

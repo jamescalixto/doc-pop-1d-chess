@@ -14,19 +14,19 @@ PIECE_VALUES = {
 
 def move(position):
     board, active, halfmove, fullmove = position.split(" ")
-    moves = list(Position.get_current_moves(position))  # list of possible moves.
+    moves = Position.get_current_moves(position)  # list of possible moves.
     random.shuffle(moves)  # randomize.
-    enemy_attacked_squares = Position.get_attacked_squares(
+    opponent_attacked_squares = Position.get_attacked_squares(
         position, Position.opposite_color(active)
-    )  # list of squares enemy is attacking.
+    )  # list of squares opponent is attacking.
 
     def move_score(m):
-        """Scoring function for a move. If target square is attacked by enemy, then the
+        """Scoring function for a move. If target square is attacked by opponent, then the
         benefit is the value of the target square minus the value of the origin piece.
         Otherwise it is just the value of the target square."""
         origin_value = PIECE_VALUES.get(board[m[0]].upper())
         target_value = PIECE_VALUES.get(board[m[1]].upper())
-        if m[1] in enemy_attacked_squares:
+        if m[1] in opponent_attacked_squares:
             return target_value - origin_value
         else:
             return target_value

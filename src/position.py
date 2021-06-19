@@ -1,3 +1,6 @@
+# Position is stored as a flat string instead of an object, because it is lightweight
+# and we don't have to worry about copying for recursion.
+#
 # The position is represented in notation similar to FEN notation, but with a few
 # notable differences. A "record" contains a particular game position, all in a single
 # text line.
@@ -15,7 +18,8 @@
 #       increment after black's move.
 # Note that castling and en passant fields, which are in FEN notation, are excluded due
 # to their irrelevance. Promotion is also impossible, as a pawn has no way around the
-# enemy king.
+# opponent king. Since promotion is impossible, there is a maximum of one of each piece per
+# side.
 #
 # The start position is "KQRBNP....pnbrqk w 0 1".
 #
@@ -58,6 +62,19 @@ def get_pieces(position):
     """Return a set of all pieces present in a given position."""
     board = list(position.split(" ")[0])
     return {square for square in board if square.upper() in NOTATION_PIECES}
+
+
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def get_current_pieces(position, player=None):
+    """Return a set of all pieces present in a given position for the player to move."""
+    board, active, halfmove, fullmove = position.split(" ")
+    if player == None:
+        player = active
+    return {
+        square
+        for square in board
+        if square.upper() in NOTATION_PIECES and square.isupper() == (player == "w")
+    }
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
@@ -141,11 +158,11 @@ def is_in_check(board, player):
 @functools.lru_cache(maxsize=CACHE_SIZE)
 def get_moves(board, player):
     """Get a list of tuples representing all legal moves by the given player."""
-    enemy_attacked_squares = get_attacked_squares(
+    opponent_attacked_squares = get_attacked_squares(
         board, opposite_color(player)
-    )  # get squares the enemy is attacking.
+    )  # get squares the opponent is attacking.
     player = player == "w"  # for boolean convenience, True if considering white.
-    moves = set()  # set of possible moves.
+    moves = []  # set of possible moves.
     for i, square in enumerate(board):
         if square.upper() in NOTATION_PIECES and (square.isupper() == player):
 
@@ -168,19 +185,19 @@ def get_moves(board, player):
                         board[test_i].upper() in NOTATION_PIECES
                     ):  # check whether we can capture piece, stop in any case.
                         if is_not_same_color(test_i):  # different color piece.
-                            moves.add((i, test_i))  # we can capture it.
+                            moves.append((i, test_i))  # we can capture it.
                         break
                     else:  # otherwise this is a valid move.
-                        moves.add((i, test_i))
+                        moves.append((i, test_i))
 
             if square.upper() == "K":
                 for test_i in [i - 1, i + 1]:
                     if (
                         index_valid(test_i)
-                        and test_i not in enemy_attacked_squares
+                        and test_i not in opponent_attacked_squares
                         and is_not_same_color(test_i)
                     ):  # king can't move into check.
-                        moves.add((i, test_i))
+                        moves.append((i, test_i))
             if square.upper() == "R" or square.upper() == "Q":
                 traverse(-1)
                 traverse(1)
@@ -190,28 +207,28 @@ def get_moves(board, player):
             if square.upper() == "N":
                 for test_i in [i - 3, i - 2, i + 2, i + 3]:
                     if index_valid(test_i) and is_not_same_color(test_i):
-                        moves.add((i, test_i))
+                        moves.append((i, test_i))
             if square.upper() == "P":
                 pawn_start = PAWN_START_WHITE if player else PAWN_START_BLACK
                 increment = 1 if player else -1
                 if index_valid(i + increment) and is_not_same_color(i + increment):
-                    moves.add((i, i + increment))
+                    moves.append((i, i + increment))
                 if i == pawn_start:  # check if the pawn can move two spaces.
                     if (
                         board[i + increment] == NOTATION_EMPTY
                         and board[i + increment * 2] == NOTATION_EMPTY
                         and index_valid(i + increment * 2)
                     ):
-                        moves.add((i, i + increment * 2))
+                        moves.append((i, i + increment * 2))
 
-    moves = {
+    moves = [
         move for move in moves if index_valid(move[1])
-    }  # trim moves outside board bounds.
-    moves = {
+    ]  # trim moves outside board bounds.
+    moves = [
         move
         for move in moves
         if not is_in_check(apply_move_board(board, move), "w" if player else "b")
-    }  # eliminate moves that result in check.
+    ]  # eliminate moves that result in check.
     return moves
 
 
