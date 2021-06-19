@@ -53,7 +53,7 @@ def run_game(verbose=True, check_valid=False):
 
 
 def run_games(num_games):
-    """Run a single game of chess."""
+    """Run multiple games of chess."""
 
     def print_games_info(c, elapsed):  # helper function to print game information.
         print("Match record:", "-".join(str(i) for i in [c["w"], c["b"], c["d"]]))
