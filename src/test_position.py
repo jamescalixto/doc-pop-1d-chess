@@ -118,3 +118,22 @@ def test_is_in_check():
     }
     for test in tests:
         assert Position.is_in_check(*test) == tests[test]
+
+
+# TODO: write more test cases.
+
+
+def test_get_moves():
+    assert True
+
+
+def test_get_current_moves():
+    assert True
+
+
+def test_apply_move_board():
+    assert True
+
+
+def test_apply_move():
+    assert True
