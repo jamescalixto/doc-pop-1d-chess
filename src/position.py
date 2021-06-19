@@ -105,7 +105,7 @@ def check_position(position):
             return (opposite_color(active), "checkmate")
         else:
             return ("d", "stalemate")
-    if int(halfmove) >= 51:
+    if int(halfmove) >= 100:
         return ("d", "50-move rule")
     pieces = get_pieces(position)
     if pieces in INSUFFICIENT_MATERIAL_SETS:
@@ -294,4 +294,4 @@ def playback_moves(position, moves):
     print(position)
     for move in moves:
         position = apply_move(position, move)
-        print(position, move)
+        print(position, "after", move)
