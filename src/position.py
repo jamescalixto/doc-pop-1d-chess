@@ -95,11 +95,13 @@ def check_position(position):
     in a real game the previous turn would have been prevented.
 
     Unlike the official rules of chess, the 50-move rule is automatically enforced as a
-    draw.
+    draw. The game is also a draw at 150 fullmoves.
 
     Threefold repetition cannot be tested within a single position."""
     board, active, halfmove, fullmove = position.split(" ")
     moves = get_moves(board, active)
+    if int(fullmove) >= 150:
+        return ("d", "150+ fullmove rule")
     if len(moves) == 0:  # no valid moves.
         if is_in_check(board, active):  # see whether this is checkmate or stalemate.
             return (opposite_color(active), "checkmate")

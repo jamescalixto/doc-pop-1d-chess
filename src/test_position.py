@@ -65,8 +65,8 @@ def test_check_position():
     tests = {
         "KQRBNP....pnbrqk w 0 1": (None, None),
         "KQRBNP....pnbrqk w 1 1": (None, None),
-        "KQRBNP....pnbrqk w 50 26": (None, None),
-        "KQRBNP....pnbrqk w 51 26": ("d", "50-move rule"),
+        "KQRBNP....pnbrqk w 99 50": (None, None),
+        "KQRBNP....pnbrqk w 100 51": ("d", "50-move rule"),
         "K.k............q w 39 20": ("d", "stalemate"),
         "K.k............q b 39 20": (None, None),
         "K.k...........q. w 39 20": ("d", "stalemate"),
