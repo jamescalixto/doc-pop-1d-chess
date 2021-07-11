@@ -1,3 +1,5 @@
+from collections import Counter
+from copy import deepcopy
 import functools
 import position as Position
 
@@ -49,20 +51,70 @@ def score_position_definite(position):
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def score_position_bfs(
-    position, depth=0, max_depth=None, max_depth_estimator=score_position_estimate
+def score_position_dfs(
+    position,  # position to score.
+    starting_player=None,  # starting player to optimize score for.
+    depth=0,  # current depth.
+    max_depth=None,  # maximum depth to search.
+    max_depth_estimator=score_position_estimate,  # function to use to estimate score.
+    seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
     return the path to that end state. Uses breadth-first-search recursively with a
     depth limit, after which it estimates the position using an estimator function."""
     board, active, halfmove, fullmove = position.split(" ")
 
-    if Position.check_position(position) != (None, None):  # game is over
-        pass
+    # Set starting player in the initial call so we know who to optimize for. This
+    # isn't overwritten (it persists) in subsequent recursive calls.
+    if starting_player is None:
+        starting_player = active
+
+    # Check for draw via threefold repetition using the boards we've seen.
+    if seen_boards.get(board) >= 3:
+        return SCORE_DRAW
+
+    # Check if game is over by other means.
+    definite_score = score_position_definite(position)
+    if definite_score is not None:
+        return definite_score
+
+    # If not, the game isn't over so we need to score the position.
+    # If we are max depth, use the estimator to score.
+    if depth == max_depth:
+        return max_depth_estimator(position)
+
+    # Otherwise we need to use depth-first-search to score.
+    #
+    # We want the best possible score for the starting player, but we also assume that
+    # the opponent plays optimally. Thus if it's the starting player's turn, pick the
+    # move that gives the best score for the starting player; if it's the opponent's
+    # turn, pick the move that gives the worst score for the starting player.
+    #
+    # We can save time by returning SCORE_WHITE_WIN or SCORE_BLACK_WIN immediately, if
+    # it's the best/worst score as above (because we know that other branches can't
+    # beat it).
+    potential_moves = Position.get_current_moves(position)
+    for potential_move in potential_moves:
+        # Make the new position.
+        potential_position = Position.apply_move(position, potential_move)
+
+        # Make a deep copy of seen boards and increment the current board in it.
+        potential_seen_boards = deepcopy(seen_boards)
+        potential_seen_boards[board] += 1
+
+        # Get the score of this potential position via recursion.
+        potential_score = score_position_dfs(
+            potential_position,  # use the new position.
+            starting_player,  # use the same starting player.
+            depth + 1,  # increment the depth by 1.
+            max_depth,  # use the same max depth.
+            max_depth_estimator,  # use the same estimator function for max depth cases.
+            potential_seen_boards,  # use the new deep copy of seen boards.
+        )
 
 
 def test_score_position(position):
-    score, moves = score_position_bfs(position)
+    score, moves = score_position_dfs(position)
     print("score={}".format(score))
     Position.playback_moves(position, moves)
 
