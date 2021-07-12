@@ -50,10 +50,10 @@ def score_position_definite(position):
         return None
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def score_position_dfs(
     position,  # position to score.
     starting_player=None,  # starting player to optimize score for.
+    movelist=[],  # moves already made.
     depth=0,  # current depth.
     max_depth=None,  # maximum depth to search.
     max_depth_estimator=score_position_estimate,  # function to use to estimate score.
@@ -70,18 +70,18 @@ def score_position_dfs(
         starting_player = active
 
     # Check for draw via threefold repetition using the boards we've seen.
-    if seen_boards.get(board) >= 3:
-        return SCORE_DRAW
+    if board in seen_boards and seen_boards.get(board) >= 3:
+        return (SCORE_DRAW, movelist)
 
     # Check if game is over by other means.
     definite_score = score_position_definite(position)
     if definite_score is not None:
-        return definite_score
+        return (definite_score, movelist)
 
     # If not, the game isn't over so we need to score the position.
     # If we are max depth, use the estimator to score.
     if depth == max_depth:
-        return max_depth_estimator(position)
+        return (max_depth_estimator(position), movelist)
 
     # Otherwise we need to use depth-first-search to score.
     #
@@ -94,30 +94,77 @@ def score_position_dfs(
     # it's the best/worst score as above (because we know that other branches can't
     # beat it).
     potential_moves = Position.get_current_moves(position)
+    predicted_scores_and_movelist = (
+        dict()
+    )  # stores moves and their corresponding stores.
     for potential_move in potential_moves:
         # Make the new position.
         potential_position = Position.apply_move(position, potential_move)
+
+        # Make a deep copy of the potential movelist and add the current move to it.
+        potential_movelist = deepcopy(movelist)
+        potential_movelist.append(potential_move)
 
         # Make a deep copy of seen boards and increment the current board in it.
         potential_seen_boards = deepcopy(seen_boards)
         potential_seen_boards[board] += 1
 
         # Get the score of this potential position via recursion.
-        potential_score = score_position_dfs(
+        predicted_score, predicted_movelist = score_position_dfs(
             potential_position,  # use the new position.
             starting_player,  # use the same starting player.
+            potential_movelist,  # use the potential movelist.
             depth + 1,  # increment the depth by 1.
             max_depth,  # use the same max depth.
             max_depth_estimator,  # use the same estimator function for max depth cases.
             potential_seen_boards,  # use the new deep copy of seen boards.
         )
 
+        # Add the score to the dictionary.
+        predicted_scores_and_movelist[potential_move] = (
+            predicted_score,
+            predicted_movelist,
+        )
 
+        # If it's the starting player's turn and this branch gives the best score for
+        # them, or if it's the opponent's turn and this branch gives the worst score for
+        # them, then return the score immediately.
+        if starting_player == "w":
+            if active == "w" and predicted_score == SCORE_WHITE_WIN:
+                return (SCORE_WHITE_WIN, predicted_movelist)
+            elif active == "b" and predicted_score == SCORE_BLACK_WIN:
+                return (SCORE_BLACK_WIN, predicted_movelist)
+        elif starting_player == "b":
+            if active == "b" and predicted_score == SCORE_BLACK_WIN:
+                return (SCORE_BLACK_WIN, predicted_movelist)
+            elif active == "w" and predicted_score == SCORE_WHITE_WIN:
+                return (SCORE_WHITE_WIN, predicted_movelist)
+
+    # If we're here, we haven't returned yet, so return the move corresponding to the
+    # best score if the starting player is active, otherwise return the move
+    # corresponding to the worst score.
+    potential_movelist = deepcopy(movelist)
+    if active == "w":
+        predicted_move = max(
+            predicted_scores_and_movelist,
+            key=lambda k: predicted_scores_and_movelist[k][0],
+        )
+    elif active == "b":
+        predicted_move = min(
+            predicted_scores_and_movelist,
+            key=lambda k: predicted_scores_and_movelist[k][0],
+        )
+
+    # Append the predicted move to the movelist and return.
+    return predicted_scores_and_movelist[predicted_move]
+
+
+@functools.lru_cache(maxsize=CACHE_SIZE)
 def test_score_position(position):
-    score, moves = score_position_dfs(position)
+    score, moves = score_position_dfs(position, max_depth=3)
     print("score={}".format(score))
     Position.playback_moves(position, moves)
 
 
-print(test_score_position("K....n.........k b 0 1"))
-# print(test_score_position("K.....nbP......k w 0 1"))
+test_score_position("K....n.........k b 0 1")
+test_score_position("K.....nbP......k w 0 1")
