@@ -27,7 +27,7 @@ PIECE_VALUES = {
 def score_position_estimate(position):
     """Given a position, score it using an estimate."""
     pieces_white = Position.get_current_pieces(position, "w")
-    pieces_black = Position.get_current_pieces(position, Position.opposite_color("b"))
+    pieces_black = Position.get_current_pieces(position, "b")
     score_white = sum(PIECE_VALUES[piece.upper()] for piece in pieces_white)
     score_black = sum(PIECE_VALUES[piece.upper()] for piece in pieces_black)
     return score_white - score_black
@@ -55,7 +55,7 @@ def score_position_dfs(
     starting_player=None,  # starting player to optimize score for.
     movelist=[],  # moves already made.
     depth=0,  # current depth.
-    max_depth=None,  # maximum depth to search.
+    max_depth=None,  # maximum depth to search, in ply (a turn by a single player).
     max_depth_estimator=score_position_estimate,  # function to use to estimate score.
     seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
 ):
@@ -126,19 +126,19 @@ def score_position_dfs(
             predicted_movelist,
         )
 
-        # If it's the starting player's turn and this branch gives the best score for
-        # them, or if it's the opponent's turn and this branch gives the worst score for
-        # them, then return the score immediately.
-        if starting_player == "w":
-            if active == "w" and predicted_score == SCORE_WHITE_WIN:
-                return (SCORE_WHITE_WIN, predicted_movelist)
-            elif active == "b" and predicted_score == SCORE_BLACK_WIN:
-                return (SCORE_BLACK_WIN, predicted_movelist)
-        elif starting_player == "b":
-            if active == "b" and predicted_score == SCORE_BLACK_WIN:
-                return (SCORE_BLACK_WIN, predicted_movelist)
-            elif active == "w" and predicted_score == SCORE_WHITE_WIN:
-                return (SCORE_WHITE_WIN, predicted_movelist)
+        # # If it's the starting player's turn and this branch gives the best score for
+        # # them, or if it's the opponent's turn and this branch gives the worst score for
+        # # them, then return the score immediately.
+        # if starting_player == "w":
+        #     if active == "w" and predicted_score == SCORE_WHITE_WIN:
+        #         return (SCORE_WHITE_WIN, predicted_movelist)
+        #     elif active == "b" and predicted_score == SCORE_BLACK_WIN:
+        #         return (SCORE_BLACK_WIN, predicted_movelist)
+        # elif starting_player == "b":
+        #     if active == "b" and predicted_score == SCORE_BLACK_WIN:
+        #         return (SCORE_BLACK_WIN, predicted_movelist)
+        #     elif active == "w" and predicted_score == SCORE_WHITE_WIN:
+        #         return (SCORE_WHITE_WIN, predicted_movelist)
 
     # If we're here, we haven't returned yet, so return the move corresponding to the
     # best score if the starting player is active, otherwise return the move
@@ -147,12 +147,18 @@ def score_position_dfs(
     if active == "w":
         predicted_move = max(
             predicted_scores_and_movelist,
-            key=lambda k: predicted_scores_and_movelist[k][0],
+            key=lambda k: (
+                predicted_scores_and_movelist[k][0],
+                len(predicted_scores_and_movelist[k][1]),
+            ),
         )
     elif active == "b":
         predicted_move = min(
             predicted_scores_and_movelist,
-            key=lambda k: predicted_scores_and_movelist[k][0],
+            key=lambda k: (
+                predicted_scores_and_movelist[k][0],
+                len(predicted_scores_and_movelist[k][1]),
+            ),
         )
 
     # Append the predicted move to the movelist and return.
@@ -161,10 +167,8 @@ def score_position_dfs(
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
 def test_score_position(position):
-    score, moves = score_position_dfs(position, max_depth=3)
+    print("")
+    score, moves = score_position_dfs(position, max_depth=12)
     print("score={}".format(score))
     Position.playback_moves(position, moves)
-
-
-test_score_position("K....n.........k b 0 1")
-test_score_position("K.....nbP......k w 0 1")
+    print("")

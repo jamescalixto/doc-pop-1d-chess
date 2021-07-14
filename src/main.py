@@ -1,3 +1,4 @@
+import evaluate
 import position as Position
 import statistics as stats
 from collections import Counter
@@ -96,4 +97,7 @@ def run_games(num_games):
         print_games_info(c, elapsed, game_lengths)
 
 
-run_games(100000)
+# run_games(100000)
+evaluate.test_score_position("K....n.........k b 0 1")
+evaluate.test_score_position("K.....nbP......k w 0 1")
+evaluate.test_score_position(Position.START_POSITION)
