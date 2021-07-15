@@ -65,7 +65,7 @@ def score_position_dfs(
     seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
-    return the path to that end state. Uses breadth-first-search recursively with a
+    return the path to that end state. Uses depth-first-search recursively with a
     depth limit, after which it estimates the position using an estimator function."""
     board, active, halfmove, fullmove = position.split(" ")
 
@@ -99,16 +99,13 @@ def score_position_dfs(
     # it's the best/worst score as above (because we know that other branches can't
     # beat it).
     potential_moves = Position.get_current_moves(position)
-    predicted_scores_and_movelist = (
-        dict()
-    )  # stores moves and their corresponding stores.
 
-    # Store best_score to compare against, as well as the move that leads to it.
+    # Store best_score to compare against, as well as the moves that leads to it.
     if active == starting_player:
-        best_score = SCORE_LOSS
+        best_score = SCORE_LOSS - 1  # start with the worst possible score.
     else:
-        best_score = SCORE_WIN
-    best_move = None
+        best_score = SCORE_WIN + 1  # start with the best possible score.
+    best_movelist = None
 
     for potential_move in potential_moves:
         # Make the new position.
@@ -124,38 +121,40 @@ def score_position_dfs(
 
         # Get the score of this potential position via recursion.
         predicted_score, predicted_movelist = score_position_dfs(
-            potential_position,  # use the new position.
-            starting_player,  # use the same starting player.
-            potential_movelist,  # use the potential movelist.
-            alpha,
-            beta,  # use the same alpha and beta values.
-            depth + 1,  # increment the depth by 1.
-            max_depth,  # use the same max depth.
-            max_depth_estimator,  # use the same estimator function for max depth cases.
-            potential_seen_boards,  # use the new deep copy of seen boards.
+            position=potential_position,  # use the new position.
+            starting_player=starting_player,  # use the same starting player.
+            movelist=potential_movelist,  # use the potential movelist.
+            alpha=alpha,
+            beta=beta,  # use the same alpha and beta values.
+            depth=depth + 1,  # increment the depth by 1.
+            max_depth=max_depth,  # use the same max depth.
+            max_depth_estimator=max_depth_estimator,  # use the same estimator function for max depth cases.
+            seen_boards=potential_seen_boards,  # use the new deep copy of seen boards.
         )
 
         # Alpha-beta pruning.
-        if active == starting_player:  # maximizing player.
-            # Get the best value.
+        if predicted_score is None:
+            continue
+        if active == starting_player:  # maximizing player, so we want higher scores.
+            # Check if the current value is the best we've seen.
             if predicted_score >= best_score:
                 best_score = predicted_score
-                best_move = potential_move
+                best_movelist = predicted_movelist
 
             if predicted_score >= beta:
-                return (None, None)
+                return None, None
             alpha = max(alpha, predicted_score)
-        else:
-            # Get the worst value.
+        else:  # minimizing player, so we want smaller scores.
+            # Check if the current value is the worst we've seen.
             if predicted_score <= best_score:
                 best_score = predicted_score
-                best_move = potential_move
+                best_movelist = potential_move
 
             if predicted_score <= alpha:
-                return (None, None)
+                return None, None
             beta = min(beta, predicted_score)
 
-    return (best_score, best_move)
+    return (best_score, best_movelist)
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
@@ -165,3 +164,8 @@ def test_score_position(position, max_depth=4):
     print("score={}".format(score))
     Position.playback_moves(position, moves)
     print("")
+
+
+test_score_position("K....n.........k b 0 1")
+test_score_position("K.....nbP......k w 0 1")
+test_score_position(Position.START_POSITION)
