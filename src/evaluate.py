@@ -53,10 +53,98 @@ def score_position_definite(position, player):
         return None
 
 
+def score_position(
+    position,  # position to score.
+    starting_player=None,  # starting player to optimize score for.
+    alpha=SCORE_LOSS - 1,  # minimum score that the maximizing player is assured of.
+    beta=SCORE_WIN + 1,  # maximum score that the minimizing player is assured of.
+    depth=0,  # current depth.
+    max_depth=None,  # maximum depth to search, in ply (a turn by a single player).
+    max_depth_heuristic=score_position_estimate,  # function to use to estimate score.
+    next_move_heuristic=lambda moves: moves,  # heuristic to return moves in order of preference.x
+    seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
+):
+    """Given a position, score it (assuming that the opponent plays optimally) and
+    return the path to that end state. Uses breadth-first-search recursively with a
+    depth limit, after which it estimates the position using an estimator function."""
+    board, active, halfmove, fullmove = position.split(" ")
+
+    # Set starting player in the initial call so we know who to optimize for. This
+    # isn't overwritten (it persists) in subsequent recursive calls.
+    if starting_player is None:
+        starting_player = active
+
+    # Check for draw via threefold repetition using the boards we've seen.
+    if board in seen_boards and seen_boards.get(board) >= 3:
+        return SCORE_DRAW
+
+    # Check if game is over by other means.
+    definite_score = score_position_definite(position, starting_player)
+    if definite_score is not None:
+        return definite_score
+
+    # If not, the game isn't over so we need to score the position.
+    # If we are max depth, use the estimator to score.
+    if depth == max_depth:
+        return max_depth_heuristic(position, starting_player)
+
+    # Otherwise, we are not at max depth, so we need to score the position.
+    # We want the best possible score for the starting player, but we also assume that
+    # the opponent plays optimally. Thus if it's the starting player's turn, pick the
+    # move that gives the best score for the starting player; if it's the opponent's
+    # turn, pick the move that gives the worst score for the starting player.
+    #
+    # We can save time by returning SCORE_WHITE_WIN or SCORE_BLACK_WIN immediately, if
+    # it's the best/worst score as above (because we know that other branches can't
+    # beat it).
+    potential_moves = next_move_heuristic(Position.get_current_moves(position))
+
+    # Store best_score to compare against, as well as the move that leads to it.
+    if active == starting_player:
+        best_score = SCORE_LOSS - 1
+    else:
+        best_score = SCORE_WIN + 1
+
+    for potential_move in potential_moves:
+        # Make the new position.
+        potential_position = Position.apply_move(position, potential_move)
+
+        # Make a deep copy of seen boards and increment the current board in it.
+        potential_seen_boards = deepcopy(seen_boards)
+        potential_seen_boards[board] += 1
+
+        # Get the score of this potential position via recursion.
+        predicted_score = score_position(
+            position=potential_position,  # use the new position.
+            starting_player=starting_player,  # use the same starting player.
+            alpha=alpha,  # use the same alpha and beta values.
+            beta=beta,
+            depth=depth + 1,  # increment the depth by 1.
+            max_depth=max_depth,  # use the same max depth.
+            max_depth_heuristic=max_depth_heuristic,  # use the same estimator function for max depth cases.
+            seen_boards=potential_seen_boards,  # use the new deep copy of seen boards.
+        )
+
+        # Alpha-beta pruning.
+        if active == starting_player:  # maximizing player.
+            best_score = max(best_score, predicted_score)
+            if best_score >= beta:
+                break  # prune.
+            alpha = max(alpha, best_score)
+        else:
+            best_score = min(best_score, predicted_score)
+            if best_score <= alpha:
+                break  # prune.
+            beta = min(beta, best_score)
+
+    return best_score
+
+
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def test_score_position(position, max_depth=4):
+def test_score_position(position, max_depth=8):
     print("")
-    score, moves = score_position(position, max_depth=max_depth)
+    score = score_position(position, max_depth=max_depth)
+    print(position)
     print("score={}".format(score))
-    Position.playback_moves(position, moves)
-    print("")
+    # Position.playback_moves(position, moves)
+    # print("")
