@@ -80,6 +80,7 @@ def score_position(
     ),  # heuristic to return moves in order of preference.
     movelist=[],  # list of moves made so far.
     seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
+    find_shortest_line=True,  # prioritize finding shortest line (longer).
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
     return the path to that end state. Uses breadth-first-search recursively with a
@@ -146,27 +147,34 @@ def score_position(
             max_depth_heuristic=max_depth_heuristic,  # use the same estimator function for max depth cases.
             movelist=potential_movelist,  # use the same movelist.
             seen_boards=potential_seen_boards,  # use the new deep copy of seen boards.
+            find_shortest_line=find_shortest_line,  # use same setting.
         )
 
         # Alpha-beta pruning.
         if active == starting_player:  # maximizing player.
             if predicted_score > best_score or (
-                predicted_score == best_score
+                find_shortest_line
+                and predicted_score == best_score
                 and len(predicted_movelist) < len(best_movelist)
-            ):
-                best_score = predicted_score
-                best_movelist = predicted_movelist
-            if best_score >= beta and len(predicted_movelist) >= len(best_movelist):
+            ):  # if we've found a better score, or a shorter one...
+                best_score = predicted_score  # set the best score to the new score.
+                best_movelist = predicted_movelist  # set the movelist for that score.
+            if best_score >= beta and (
+                not find_shortest_line or len(predicted_movelist) >= len(best_movelist)
+            ):  # if we can't get any better and the line isn't shorter...
                 break  # prune.
             alpha = max(alpha, best_score)
-        else:
+        else:  # similar (but opposite) case for the minimizing player.
             if predicted_score < best_score or (
-                predicted_score == best_score
+                find_shortest_line
+                and predicted_score == best_score
                 and len(predicted_movelist) < len(best_movelist)
             ):
                 best_score = predicted_score
                 best_movelist = predicted_movelist
-            if best_score <= alpha and len(predicted_movelist) >= len(best_movelist):
+            if best_score <= alpha and (
+                not find_shortest_line or len(predicted_movelist) >= len(best_movelist)
+            ):
                 break  # prune.
             beta = min(beta, best_score)
 
@@ -175,7 +183,7 @@ def score_position(
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
 def test_score_position(
-    position, max_depth=8, next_move_heuristic=next_move_heuristic_estimate
+    position, max_depth=10, next_move_heuristic=next_move_heuristic_estimate
 ):
     print("")
     score, moves = score_position(
