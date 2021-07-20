@@ -78,6 +78,7 @@ def score_position(
     next_move_heuristic=lambda position, _: Position.get_current_moves(
         position
     ),  # heuristic to return moves in order of preference.
+    movelist=[],  # list of moves made so far.
     seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
@@ -92,17 +93,17 @@ def score_position(
 
     # Check for draw via threefold repetition using the boards we've seen.
     if board in seen_boards and seen_boards.get(board) >= 3:
-        return SCORE_DRAW
+        return SCORE_DRAW, movelist
 
     # Check if game is over by other means.
     definite_score = score_position_definite(position, starting_player)
     if definite_score is not None:
-        return definite_score
+        return definite_score, movelist
 
     # If not, the game isn't over so we need to score the position.
     # If we are max depth, use the estimator to score.
     if depth == max_depth:
-        return max_depth_heuristic(position, starting_player)
+        return max_depth_heuristic(position, starting_player), movelist
 
     # Otherwise, we are not at max depth, so we need to score the position.
     # We want the best possible score for the starting player, but we also assume that
@@ -115,22 +116,27 @@ def score_position(
     # beat it).
     potential_moves = next_move_heuristic(position, starting_player)
 
-    # Store best_score to compare against, as well as the move that leads to it.
+    # Store best score to compare against and the move that leads to it,.
     if active == starting_player:
         best_score = SCORE_LOSS - 1
     else:
         best_score = SCORE_WIN + 1
+    best_movelist = None
 
     for potential_move in potential_moves:
         # Make the new position.
         potential_position = Position.apply_move(position, potential_move)
+
+        # Make a deepcopy of the movelist and add the current move.
+        potential_movelist = deepcopy(movelist)
+        potential_movelist.append(potential_move)
 
         # Make a deep copy of seen boards and increment the current board in it.
         potential_seen_boards = deepcopy(seen_boards)
         potential_seen_boards[board] += 1
 
         # Get the score of this potential position via recursion.
-        predicted_score = score_position(
+        predicted_score, predicted_movelist = score_position(
             position=potential_position,  # use the new position.
             starting_player=starting_player,  # use the same starting player.
             alpha=alpha,  # use the same alpha and beta values.
@@ -138,22 +144,27 @@ def score_position(
             depth=depth + 1,  # increment the depth by 1.
             max_depth=max_depth,  # use the same max depth.
             max_depth_heuristic=max_depth_heuristic,  # use the same estimator function for max depth cases.
+            movelist=potential_movelist,  # use the same movelist.
             seen_boards=potential_seen_boards,  # use the new deep copy of seen boards.
         )
 
         # Alpha-beta pruning.
         if active == starting_player:  # maximizing player.
-            best_score = max(best_score, predicted_score)
+            if predicted_score > best_score:
+                best_score = predicted_score
+                best_movelist = predicted_movelist
             if best_score >= beta:
                 break  # prune.
             alpha = max(alpha, best_score)
         else:
-            best_score = min(best_score, predicted_score)
+            if predicted_score < best_score:
+                best_score = predicted_score
+                best_movelist = predicted_movelist
             if best_score <= alpha:
                 break  # prune.
             beta = min(beta, best_score)
 
-    return best_score
+    return best_score, best_movelist
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
@@ -161,10 +172,9 @@ def test_score_position(
     position, max_depth=8, next_move_heuristic=next_move_heuristic_estimate
 ):
     print("")
-    score = score_position(
+    score, moves = score_position(
         position, max_depth=max_depth, next_move_heuristic=next_move_heuristic
     )
-    print(position)
     print("score={}".format(score))
-    # Position.playback_moves(position, moves)
-    # print("")
+    Position.playback_moves(position, moves)
+    print("")
