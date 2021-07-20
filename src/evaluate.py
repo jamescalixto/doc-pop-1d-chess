@@ -116,7 +116,7 @@ def score_position(
     # beat it).
     potential_moves = next_move_heuristic(position, starting_player)
 
-    # Store best score to compare against and the move that leads to it,.
+    # Store best score to compare against and the move that leads to it.
     if active == starting_player:
         best_score = SCORE_LOSS - 1
     else:
@@ -150,17 +150,23 @@ def score_position(
 
         # Alpha-beta pruning.
         if active == starting_player:  # maximizing player.
-            if predicted_score > best_score:
+            if predicted_score > best_score or (
+                predicted_score == best_score
+                and len(predicted_movelist) < len(best_movelist)
+            ):
                 best_score = predicted_score
                 best_movelist = predicted_movelist
-            if best_score >= beta:
+            if best_score >= beta and len(predicted_movelist) >= len(best_movelist):
                 break  # prune.
             alpha = max(alpha, best_score)
         else:
-            if predicted_score < best_score:
+            if predicted_score < best_score or (
+                predicted_score == best_score
+                and len(predicted_movelist) < len(best_movelist)
+            ):
                 best_score = predicted_score
                 best_movelist = predicted_movelist
-            if best_score <= alpha:
+            if best_score <= alpha and len(predicted_movelist) >= len(best_movelist):
                 break  # prune.
             beta = min(beta, best_score)
 
