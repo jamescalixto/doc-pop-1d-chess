@@ -53,6 +53,20 @@ def score_position_definite(position, player):
         return None
 
 
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def next_move_heuristic_estimate(position, starting_player):
+    """Use the position scoring estimator to return the list of moves in order from best
+    to worst."""
+    potential_moves = Position.get_current_moves(position)
+    return sorted(
+        potential_moves,
+        key=lambda move: score_position_estimate(
+            Position.apply_move(position, move), starting_player
+        ),  # sort by score for the starting player after applying the move.
+        reverse=True,  # we want the best moves to be first.
+    )
+
+
 def score_position(
     position,  # position to score.
     starting_player=None,  # starting player to optimize score for.
@@ -61,7 +75,9 @@ def score_position(
     depth=0,  # current depth.
     max_depth=None,  # maximum depth to search, in ply (a turn by a single player).
     max_depth_heuristic=score_position_estimate,  # function to use to estimate score.
-    next_move_heuristic=lambda moves: moves,  # heuristic to return moves in order of preference.x
+    next_move_heuristic=lambda position, _: Position.get_current_moves(
+        position
+    ),  # heuristic to return moves in order of preference.
     seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
@@ -97,7 +113,7 @@ def score_position(
     # We can save time by returning SCORE_WHITE_WIN or SCORE_BLACK_WIN immediately, if
     # it's the best/worst score as above (because we know that other branches can't
     # beat it).
-    potential_moves = next_move_heuristic(Position.get_current_moves(position))
+    potential_moves = next_move_heuristic(position, starting_player)
 
     # Store best_score to compare against, as well as the move that leads to it.
     if active == starting_player:
@@ -141,9 +157,13 @@ def score_position(
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def test_score_position(position, max_depth=8):
+def test_score_position(
+    position, max_depth=8, next_move_heuristic=next_move_heuristic_estimate
+):
     print("")
-    score = score_position(position, max_depth=max_depth)
+    score = score_position(
+        position, max_depth=max_depth, next_move_heuristic=next_move_heuristic
+    )
     print(position)
     print("score={}".format(score))
     # Position.playback_moves(position, moves)
