@@ -98,7 +98,11 @@ def run_games(num_games):
 
 
 # run_games(100000)
-evaluate.test_score_position("K....n.........k b 0 1")
-evaluate.test_score_position("K.....nbP......k w 0 1")
-evaluate.test_score_position("KQRB..NP.p.nbrqk b 0 1")
-evaluate.test_score_position(Position.START_POSITION)
+# evaluate.test_score_position("K....n.........k b 0 1")
+# evaluate.test_score_position("K.....nbP......k w 0 1")
+# evaluate.test_score_position("KQRB..NP.p.nbrqk b 0 1")
+# evaluate.test_score_position(Position.START_POSITION)
+evaluate.test_next_moves("K....n.........k b 0 1")
+evaluate.test_next_moves("K.....nbP......k w 0 1")
+evaluate.test_next_moves("KQRB..NP.p.nbrqk b 0 1")
+evaluate.test_next_moves(Position.START_POSITION)

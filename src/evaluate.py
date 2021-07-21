@@ -182,13 +182,29 @@ def score_position(
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def test_score_position(
-    position, max_depth=10, next_move_heuristic=next_move_heuristic_estimate
-):
+def test_score_position(position, max_depth=10):
     print("")
-    score, moves = score_position(
-        position, max_depth=max_depth, next_move_heuristic=next_move_heuristic
-    )
+    score, moves = score_position(position, max_depth=max_depth)
     print("score={}".format(score))
     Position.playback_moves(position, moves)
+    print("")
+
+
+@functools.lru_cache(maxsize=CACHE_SIZE)
+def test_next_moves(position, max_depth=2):
+    print("")
+    next_moves = Position.get_current_moves(position)
+    next_tuples = [
+        (
+            next_move,
+            Position.apply_move(position, next_move),
+            score_position(position, max_depth),
+        )
+        for next_move in next_moves
+    ]  # get move/position/score tuples.
+    next_tuples.sort(key=lambda t: t[2][0], reverse=True)  # sort highest to lowest.
+
+    print(position)
+    for next_tuple in next_tuples:
+        print(next_tuple[2].ljust(6, " "), next_tuple[1], "after", next_tuple[0])
     print("")
