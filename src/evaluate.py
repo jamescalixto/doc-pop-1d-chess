@@ -164,6 +164,10 @@ def score_position(
             ):  # if we can't get any better and the line isn't shorter...
                 break  # prune.
             alpha = max(alpha, best_score)
+            if (
+                find_shortest_line and best_score == SCORE_WIN
+            ):  # abort early if we've found a win.
+                return best_score, best_movelist
         else:  # similar (but opposite) case for the minimizing player.
             if predicted_score < best_score or (
                 find_shortest_line
@@ -177,21 +181,27 @@ def score_position(
             ):
                 break  # prune.
             beta = min(beta, best_score)
+            if (
+                find_shortest_line and best_score == SCORE_LOSS
+            ):  # abort early if we've found a loss.
+                return best_score, best_movelist
 
     return best_score, best_movelist
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def test_score_position(position, max_depth=10):
+def test_score_position(position, max_depth=20):
     print("")
-    score, moves = score_position(position, max_depth=max_depth)
-    print("score={}".format(score))
+    score, moves = score_position(
+        position, max_depth=max_depth, find_shortest_line=False
+    )
+    print("score={} (depth={})".format(score, max_depth))
     Position.playback_moves(position, moves)
     print("")
 
 
 @functools.lru_cache(maxsize=CACHE_SIZE)
-def test_next_moves(position, max_depth=2):
+def test_next_moves(position, max_depth=16):
     print("")
     next_moves = Position.get_current_moves(position)
     next_tuples = [

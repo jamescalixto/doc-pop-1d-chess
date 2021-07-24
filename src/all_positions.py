@@ -14,7 +14,7 @@ def explore():
     def is_candidate(position):
         return position not in seen_positions and position not in next_positions
 
-    while len(positions) > 0:
+    while len(positions) > 0 and current_level < 10:
         seen_positions = seen_positions.union(positions)
         print(
             "# positions reachable after {} halfmoves = {}".format(
