@@ -33,4 +33,4 @@ def explore(max_level):
     print("No more traversable positions after this depth.")
 
 
-cProfile.run("explore(10)")
+cProfile.run("explore(11)")
