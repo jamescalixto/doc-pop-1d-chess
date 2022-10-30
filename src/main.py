@@ -8,8 +8,8 @@ from ai_random import move as ai_random
 from ai_greedy import move as ai_greedy
 
 # Set up AI for each side.
-AI_WHITE = ai_random
-AI_BLACK = ai_random
+AI_WHITE = ai_greedy
+AI_BLACK = ai_greedy
 
 
 def run_game(verbose=True, check_valid=False):
@@ -97,11 +97,11 @@ def run_games(num_games):
         print_games_info(c, elapsed, game_lengths)
 
 
-# run_games(100000)
+run_games(10000)
 # evaluate.test_score_position("K....n.........k b 0 1")
 # evaluate.test_score_position("K.....nbP......k w 0 1")
 # evaluate.test_score_position("KQRB..NP.p.nbrqk b 0 1")
-evaluate.test_score_position(Position.START_POSITION)
+# evaluate.test_score_position(Position.START_POSITION)
 # evaluate.test_next_moves("K....n.........k b 0 1")
 # evaluate.test_next_moves("K.....nbP......k w 0 1")
 # evaluate.test_next_moves("KQRB..NP.p.nbrqk b 0 1")

@@ -28,7 +28,6 @@
 # capture.
 
 # Imports.
-import functools  # generous use of caching to speed up repeated tests.
 
 CACHE_SIZE = 1048576  # size of LRU caching for functions.
 
@@ -57,14 +56,12 @@ def opposite_color(color):  # helper function to return opposite color.
     return "b" if color == "w" else "w"
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def get_pieces(position):
     """Return a set of all pieces present in a given position."""
     board = list(position.split(" ")[0])
     return {square for square in board if square.upper() in NOTATION_PIECES}
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def get_current_pieces(position, player=None):
     """Return a set of all pieces present in a given position for the player to move."""
     board, active, halfmove, fullmove = position.split(" ")
@@ -77,7 +74,6 @@ def get_current_pieces(position, player=None):
     }
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def check_position(position):
     """Check if a position is an ended game, via stalemate or checkmate. Returns a tuple
     where the first element is "w" or "b" to indicate a winner, "d" to indicate a draw,
@@ -115,7 +111,6 @@ def check_position(position):
     return (None, None)
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def get_attacked_squares(board, player):
     """Get a list of squares attacked by the given player. Includes squares occupied by
     pieces belonging to both players. No piece attacks its own square."""
@@ -158,7 +153,6 @@ def get_attacked_squares(board, player):
     return attacked_squares
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def is_in_check(board, player):
     """Return true if the given player is in check in the given board. Assumes that
     the position is valid."""
@@ -167,7 +161,6 @@ def is_in_check(board, player):
     return king_position in attacked_squares
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def get_moves(board, player):
     """Get a list of tuples representing all legal moves by the given player."""
     opponent_attacked_squares = get_attacked_squares(
@@ -250,7 +243,6 @@ def get_current_moves(position):
     return get_moves(board, active)
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def apply_move_board(board, move):
     """Naively apply a move to the board; i.e., assume the position and move are both
     valid and legal. Used when extraneous details of the position do not matter; i.e.
@@ -261,7 +253,6 @@ def apply_move_board(board, move):
     return "".join(board)
 
 
-@functools.lru_cache(maxsize=CACHE_SIZE)
 def apply_move(position, move):
     """Naively apply a move to the position; i.e., assume the position and move are
     both valid and legal."""

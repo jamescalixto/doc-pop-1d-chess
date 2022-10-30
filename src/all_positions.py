@@ -1,9 +1,9 @@
+import cProfile
 import functools
 import position as Position
-from timeit import default_timer as timer
 
 
-def explore():
+def explore(max_level):
     """Explore and enumerate the game tree."""
     seen_positions = set()
     current_level = 0
@@ -14,13 +14,8 @@ def explore():
     def is_candidate(position):
         return position not in seen_positions and position not in next_positions
 
-    while len(positions) > 0 and current_level < 10:
+    while len(positions) > 0 and current_level < max_level:
         seen_positions = seen_positions.union(positions)
-        print(
-            "# positions reachable after {} halfmoves = {}".format(
-                str(current_level).rjust(3), len(positions)
-            )
-        )
         next_positions = {
             Position.apply_move(position, next_move)
             for position in positions
@@ -30,7 +25,12 @@ def explore():
         positions = next_positions
         next_positions = set()
         current_level += 1
+        print(
+            "# positions reachable after {} halfmoves = {}".format(
+                str(current_level).rjust(3), len(positions)
+            )
+        )
     print("No more traversable positions after this depth.")
 
 
-explore()
+cProfile.run("explore(10)")
