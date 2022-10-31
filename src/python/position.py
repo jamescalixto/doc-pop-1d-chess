@@ -27,10 +27,6 @@
 # 0-indexed, so squares are 0 through 13 inclusive. There is no special notation for a
 # capture.
 
-# Imports.
-
-CACHE_SIZE = 1048576  # size of LRU caching for functions.
-
 BOARD_SIZE = 16  # number of squares on the board.
 START_POSITION = "KQRBNP....pnbrqk w 0 1"
 
