@@ -90,6 +90,8 @@ const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibb
 int PAWN_START_WHITE = 5;
 int PAWN_START_BLACK = 10;
 
+// Import saved
+
 /*
 Debug function. Print bitwise representation of a number.
 */
@@ -290,7 +292,7 @@ bool isInsufficientMaterialPieceSet(int pieceSet)
     return (pieceSet == 2080    // kings only.
             || pieceSet == 2336 // kings and white bishop.
             || pieceSet == 2084 // kings and black bishop.
-    )
+    );
 }
 
 /*
@@ -410,9 +412,9 @@ bool isInCheck(unsigned long long board, bool player)
 }
 
 /*
-G
+Get a vector of ints representing all legal moves by the given player.
 */
-void getMoves(unsigned long long board, bool player)
+vector<int> getMoves(unsigned long long board, bool player)
 {
     // TODO: think about how to define this.
 }
