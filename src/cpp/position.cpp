@@ -1,10 +1,13 @@
 #include <bitset>
+#include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
 
+using std::map;
 using std::string;
 using std::tuple, std::make_tuple, std::tie;
 using std::vector;
@@ -81,16 +84,32 @@ space and the YYYY nibble indicates the ending space.
 */
 
 // Handy constants.
-const int BOARD_SIZE = 16;
+const unsigned int BOARD_SIZE = 16;
 const unsigned long long START_POSITION = 3991632928627678971;
 const unsigned long long FIRST_NIBBLE_BITMASK = 240; // bitmask to get first nibble (of a byte).
 const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibble.
 
 // 0-indexed start positions of pawns. Used to determine if they can move two spaces.
-int PAWN_START_WHITE = 5;
-int PAWN_START_BLACK = 10;
+unsigned int PAWN_START_WHITE = 5;
+unsigned int PAWN_START_BLACK = 10;
 
-// Import saved
+// Import saved lookup tables for sliding rook-like and bishop-like attacks.
+// This needs to be called in main() to initialize the variables.
+map<unsigned long long, unsigned int> attackLookup;
+void importLookupTables(map<unsigned long long, unsigned int> &attackLookup)
+{
+    std::ifstream file("mapping.txt");
+    string line;
+    unsigned long long occupancy;
+    unsigned int moveset;
+    while (std::getline(file, line))
+    {
+        std::stringstream ss;
+        ss << line;
+        ss >> occupancy >> moveset;
+        attackLookup[occupancy] = moveset;
+    }
+}
 
 /*
 Debug function. Print bitwise representation of a number.
@@ -103,15 +122,15 @@ void debugPrint(unsigned long long i)
 /*
 Helper function to check valid index.
 */
-bool indexValid(int i)
+bool indexValid(unsigned int i)
 {
-    return 0 <= i < BOARD_SIZE;
+    return 0 <= i && i < BOARD_SIZE;
 }
 
 /*
-Helper function to grab the last nibble of an int.
+Helper function to grab the last nibble of an unsigned int.
 */
-int getLastNibble(int i)
+unsigned int getLastNibble(unsigned int i)
 {
     return i & LAST_NIBBLE_BITMASK;
 }
@@ -120,58 +139,58 @@ int getLastNibble(int i)
 Helper function to find a nibble n in i and return the index of it, assuming the given
 number is BOARD_SIZE bits long. Returns -1 if the nibble is not found.
 */
-int findNibble(unsigned long long i, unsigned long long nibble)
+unsigned int findNibble(unsigned long long num, unsigned long long nibble)
 {
-    for (int i = 0; i < BOARD_SIZE; i++)
+    for (unsigned int i = 0; i < BOARD_SIZE; i++)
     {
-        if (i & LAST_NIBBLE_BITMASK == nibble)
+        if ((num & LAST_NIBBLE_BITMASK) == nibble)
         {
             return BOARD_SIZE - i - 1;
         }
         else
         {
-            i = i >> 4;
+            num = num >> 4;
         }
     }
     return -1;
 }
 
 /*
-Helper function to extract the nth nibble of i, assuming the given number is BOARD_SIZE
-bits long.
-*/
-unsigned long long getNthNibble(unsigned long long i, int n)
-{
-    int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
-    return (i >> bitshifts) & LAST_NIBBLE_BITMASK;
-}
-
-/*
-Helper function to blank the nth nibble of i, assuming the given number is BOARD_SIZE
-bits long.
-*/
-unsigned long long blankNthNibble(unsigned long long i, int n)
-{
-    int bitshifts = 4 * (BOARD_SIZE - n - 1);                         // number of bitshifts to do.
-    unsigned long long blanker = ~(LAST_NIBBLE_BITMASK << bitshifts); // all 1s except for nth nibble.
-    return i & blanker;
-}
-
-/*
-Helper function to insert a nibble as the nth nibble of i, assuming the given number is
+Helper function to extract the nth nibble of num, assuming the given number is
 BOARD_SIZE bits long.
 */
-unsigned long long insertNthNibble(unsigned long long i, unsigned long long nibble, int n)
+unsigned long long getNthNibble(unsigned long long num, unsigned int n)
 {
-    int bitshifts = 4 * (BOARD_SIZE - n - 1);          // number of bitshifts to do.
+    unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
+    return (num >> bitshifts) & LAST_NIBBLE_BITMASK;
+}
+
+/*
+Helper function to blank the nth nibble of num, assuming the given number is BOARD_SIZE
+bits long.
+*/
+unsigned long long blankNthNibble(unsigned long long num, unsigned int n)
+{
+    unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1);                // number of bitshifts to do.
+    unsigned long long blanker = ~(LAST_NIBBLE_BITMASK << bitshifts); // all 1s except for nth nibble.
+    return num & blanker;
+}
+
+/*
+Helper function to insert a nibble as the nth nibble of num, assuming the given number
+is BOARD_SIZE bits long.
+*/
+unsigned long long insertNthNibble(unsigned long long num, unsigned long long nibble, unsigned int n)
+{
+    unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
     unsigned long long inserter = nibble << bitshifts; // move nibble to correct spot.
-    return blankNthNibble(i, n) | inserter;
+    return blankNthNibble(num, n) | inserter;
 }
 
 /*
 Given a character representing a piece, return the numerical representation.
 */
-int pieceToBits(char c)
+unsigned int pieceToBits(char c)
 {
     switch (c)
     {
@@ -209,7 +228,7 @@ int pieceToBits(char c)
 /*
 Given an int representing a piece, return the character representation.
 */
-char bitsToPiece(int i)
+char bitsToPiece(unsigned int i)
 {
     switch (i)
     {
@@ -245,10 +264,10 @@ char bitsToPiece(int i)
 }
 
 /*
-Given an int representing a piece, return the bitflag for it for piece-set purposes.
+Given an unsigned int representing a piece, return the bitflag for it for piece-set purposes.
 This follows the format KQRBNPkqrbnp.
 */
-int bitsToPieceSet(int i)
+unsigned int bitsToPieceSet(unsigned int i)
 {
     switch (i)
     {
@@ -287,7 +306,7 @@ int bitsToPieceSet(int i)
 Check if a given piece set represents a position with insufficient material. Empirically
 determined.
 */
-bool isInsufficientMaterialPieceSet(int pieceSet)
+bool isInsufficientMaterialPieceSet(unsigned int pieceSet)
 {
     return (pieceSet == 2080    // kings only.
             || pieceSet == 2336 // kings and white bishop.
@@ -298,17 +317,37 @@ bool isInsufficientMaterialPieceSet(int pieceSet)
 /*
 Helper functions to check pieces or piece properties.
 */
-bool isEmpty(int nibble)
+bool isEmpty(unsigned int nibble)
 {
     return nibble == 0;
 }
-bool isPieceOfPlayer(int nibble, bool player)
+bool isPieceOfPlayer(unsigned int nibble, bool player)
 {
-    return !isEmpty(nibble) && (nibble >> 3 != player);
+    return !isEmpty(nibble) && ((nibble >> 3) != player);
 }
-bool isPawn(int nibble)
+bool isPawn(unsigned int nibble)
 {
-    return nibble & 7 == 1;
+    return nibble == 1 || nibble == 9;
+}
+bool isKnight(unsigned int nibble)
+{
+    return nibble == 2 || nibble == 10;
+}
+bool isBishop(unsigned int nibble)
+{
+    return nibble == 5 || nibble == 13;
+}
+bool isRook(unsigned int nibble)
+{
+    return nibble == 6 || nibble == 14;
+}
+bool isQueen(unsigned int nibble)
+{
+    return nibble == 7 || nibble == 15;
+}
+bool isKing(unsigned int nibble)
+{
+    return nibble == 3 || nibble == 11;
 }
 
 /*
@@ -339,9 +378,9 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> fenceToVars(
     string::iterator it;
     for (it = boardString.begin(); it != boardString.end(); it++)
     {
-        board = board << 4;                 // leftshift one nibble.
-        int pieceAsBits = pieceToBits(*it); // get numerical representation.
-        board |= pieceAsBits;               // OR operator to add the new piece.
+        board = board << 4;                          // leftshift one nibble.
+        unsigned int pieceAsBits = pieceToBits(*it); // get numerical representation.
+        board |= pieceAsBits;                        // OR operator to add the new piece.
     }
 
     return make_tuple(board, active, halfmove, fullmove);
@@ -359,11 +398,11 @@ string varsToFence(
 {
     // Turn unsigned long long into board string.
     string boardString;
-    for (int i = 0; i < BOARD_SIZE; i++)
+    for (unsigned int i = 0; i < BOARD_SIZE; i++)
     {
-        int lastNibble = getLastNibble(board);  // get last nibble.
-        boardString += bitsToPiece(lastNibble); // store char representation.
-        board = board >> 4;                     // leftshift one nibble.
+        unsigned int lastNibble = getLastNibble(board); // get last nibble.
+        boardString += bitsToPiece(lastNibble);         // store char representation.
+        board = board >> 4;                             // leftshift one nibble.
     }
     std::reverse(boardString.begin(), boardString.end()); // reverse string;
 
@@ -381,25 +420,59 @@ KQRBNPkqrbnp
 
 so if white had a queen and black had a rook, this would be 110000101000 = 3112.
 */
-int getPieceSet(unsigned long long board)
+unsigned int getPieceSet(unsigned long long board)
 {
-    int pieceSet = 0;
-    for (int i = 0; i < BOARD_SIZE; i++)
+    unsigned int pieceSet = 0;
+    for (unsigned int i = 0; i < BOARD_SIZE; i++)
     {
-        int lastNibble = getLastNibble(board);  // get last nibble.
-        pieceSet |= bitsToPieceSet(lastNibble); // store pieceset representation.
+        unsigned int lastNibble = getLastNibble(board); // get last nibble.
+        pieceSet |= bitsToPieceSet(lastNibble);         // store pieceset representation.
         board = board >> 4;
     }
     return pieceSet;
 }
 
 /*
+Get occupancy as a 16-bit number. The nth bit from the left is true
+*/
+unsigned int getOccupancy(unsigned long long board)
+{
+    unsigned int occupancy = 0;
+    for (unsigned int i = 0; i < BOARD_SIZE; i++) // check every square for pieces.
+    {
+        occupancy = occupancy << 1;                     // left shift occupancy by one.
+        unsigned int lastNibble = getLastNibble(board); // get last nibble.
+        occupancy |= (lastNibble != 0);                 // fill with occupancy.
+        board = board >> 4;                             // move board over.
+    }
+    return occupancy;
+}
+
+/*
 Get (as a bitflag) squares attacked by the given player. Includes squares occupied by
 pieces belonging to both players. No piece attacks its own square.
 */
-int getAttackedSquares(unsigned long long board, bool player)
+unsigned int getAttackedSquares(unsigned long long board, bool player)
 {
-    // TODO: implement this.
+    unsigned int allAttackedSquares = 0;          // keep track of all attacked squares.
+    unsigned int occupancy = getOccupancy(board); // store occupancy.
+    for (unsigned int i = 0; i < BOARD_SIZE; i++) // check every square for attacks.
+    {
+        unsigned int piece_nibble = getLastNibble(board); // get last nibble.
+        if (isPieceOfPlayer(piece_nibble, player))
+        {
+            unsigned int attackedSquares = 0; // bitflag of squares this piece attacks.
+            if (piece_nibble > 9)
+            {                      // black, non-pawn piece.
+                piece_nibble %= 8; // get the white piece equivalent.
+            }
+            unsigned long long key = (piece_nibble << 20) | (i << 16) | (occupancy);
+            attackedSquares = attackLookup[key];
+            allAttackedSquares |= attackedSquares; // add attacked squares.
+            debugPrint(key);
+            debugPrint(attackedSquares);
+        }
+    }
 }
 
 /*
@@ -408,13 +481,17 @@ position is valid.
 */
 bool isInCheck(unsigned long long board, bool player)
 {
-    // TODO: implement this.
+    unsigned int kingNibble = player ? 3 : 11;                               // nibble representing king to check for.
+    unsigned int kingPosition = findNibble(board, kingNibble);               // index of king.
+    unsigned int kingPositionBitflag = 1 << (BOARD_SIZE - kingPosition - 1); // get location as bitflag of index.
+    unsigned int attackedSquares = getAttackedSquares(board, !player);       // get squares that opponent is attacking.
+    return (kingPositionBitflag & attackedSquares);                          // return whether king is in those squares.
 }
 
 /*
 Get a vector of ints representing all legal moves by the given player.
 */
-vector<int> getMoves(unsigned long long board, bool player)
+vector<unsigned int> getMoves(unsigned long long board, bool player)
 {
     // TODO: think about how to define this.
 }
@@ -424,14 +501,14 @@ Naively apply a move to the board; i.e., assume the position and move are both v
 legal. Used when other elements of the position do not matter; i.e. when testing check.
 Return the new board.
 */
-unsigned long long applyMoveToBoard(unsigned long long board, int move)
+unsigned long long applyMoveToBoard(unsigned long long board, unsigned int move)
 {
     // Get indices.
-    int start_index = getLastNibble(move);
-    int end_index = move >> 4; // get first nibble by rightshifting the move.
+    unsigned int start_index = getLastNibble(move);
+    unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
 
     // Get nibble at start.
-    int start_nibble = getNthNibble(board, start_index);
+    unsigned int start_nibble = getNthNibble(board, start_index);
 
     // Replace and return.
     return insertNthNibble(board, start_nibble, end_index);
@@ -446,15 +523,15 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> applyMove(
     bool active,
     unsigned int halfmove,
     unsigned int fullmove,
-    int move)
+    unsigned int move)
 {
     // Get indices.
-    int start_index = getLastNibble(move);
-    int end_index = move >> 4; // get first nibble by rightshifting the move.
+    unsigned int start_index = getLastNibble(move);
+    unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
 
     // Get nibbles.
-    int start_nibble = getNthNibble(board, start_index);
-    int end_nibble = getNthNibble(board, end_index);
+    unsigned int start_nibble = getNthNibble(board, start_index);
+    unsigned int end_nibble = getNthNibble(board, end_index);
 
     // Update halfmove if move is a capture or pawn move.
     if (isPawn(start_nibble) || !isEmpty(end_nibble))
@@ -473,7 +550,7 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> applyMove(
     }
 
     board = insertNthNibble(board, start_nibble, end_index);
-    active != active;
+    active = !active;
     return make_tuple(board, active, halfmove, fullmove);
 }
 
@@ -543,17 +620,43 @@ int checkPosition(
     }
 }
 
+/*
+Given a position and an iterable of moves, print a nicely formatted playback of those
+moves, applying them naively.
+*/
+void playbackMoves(
+    unsigned long long board,
+    bool active,
+    unsigned int halfmove,
+    unsigned int fullmove,
+    vector<unsigned int> moves)
+{
+    std::cout << "0123456789012345" << std::endl; // makes it easier to see move indices.
+    std::cout << varsToFence(board, active, halfmove, fullmove) << std::endl;
+    for (unsigned int move : moves)
+    {
+        tie(board, active, halfmove, fullmove) = applyMove(board, active, halfmove, fullmove, move);
+        unsigned int start_index = getLastNibble(move);
+        unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
+        std::cout << varsToFence(board, active, halfmove, fullmove);
+        std::cout << " after " << start_index << " -> " << end_index << std::endl;
+    }
+}
+
 int main()
 {
-    string fence = "KQRBNP....pnbrqk w 0 1";
+    importLookupTables(attackLookup);
 
-    // Declare variables to store position information.
-    unsigned long long board;
-    bool active;
-    unsigned int halfmove, fullmove;
+    debugPrint(getAttackedSquares(START_POSITION, true));
+    // string fence = "KQRBNP....pnbrqk w 0 1";
 
-    tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+    // // Declare variables to store position information.
+    // unsigned long long board;
+    // bool active;
+    // unsigned int halfmove, fullmove;
 
-    debugPrint(board);
-    std::cout << varsToFence(board, active, fullmove, halfmove) << std::endl;
+    // tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+
+    // debugPrint(board);
+    // std::cout << varsToFence(board, active, fullmove, halfmove) << std::endl;
 }

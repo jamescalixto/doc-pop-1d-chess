@@ -64,6 +64,12 @@
         "algorithm": "cpp",
         "functional": "cpp",
         "iterator": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "map": "cpp",
+        "__tree": "cpp",
+        "deque": "cpp",
+        "fstream": "cpp",
+        "iomanip": "cpp",
+        "stack": "cpp"
     }
 }
