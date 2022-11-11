@@ -410,11 +410,9 @@ string varsToFence(
     string boardString;
     for (int i = 0; i < BOARD_SIZE; i++)
     {
-        unsigned int lastNibble = getLastNibble(board); // get last nibble.
-        boardString += bitsToPiece(lastNibble);         // store char representation.
-        board = board >> 4;                             // leftshift one nibble.
+        unsigned int firstNibble = getNthNibble(board, i); // get last nibble.
+        boardString += bitsToPiece(firstNibble);           // store char representation.
     }
-    std::reverse(boardString.begin(), boardString.end()); // reverse string;
 
     // Turn active flag into string.
     string activeString = active ? "w" : "b";
@@ -621,6 +619,7 @@ vector<unsigned int> getMoves(unsigned long long board, bool player)
                     if (!isInCheck(applyMoveToBoard(board, move), player))
                     {
                         // Only add the move if, when we try it, the player is not in check.
+                        std::cout << start << " " << end << std::endl;
                         moves.push_back(move);
                     }
                 }
