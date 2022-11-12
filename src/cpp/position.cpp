@@ -120,6 +120,10 @@ void print(unsigned long long i)
 {
     std::cout << i << std::endl;
 }
+void print(string s)
+{
+    std::cout << s << std::endl;
+}
 
 /*
 Debug function. Print bitwise representation of a number.
@@ -172,7 +176,7 @@ BOARD_SIZE bits long.
 unsigned long long getNthNibble(unsigned long long num, unsigned int n)
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
-    return (num >> bitshifts) & LAST_NIBBLE_BITMASK;
+    return ((num >> bitshifts) & LAST_NIBBLE_BITMASK);
 }
 
 /*
@@ -183,7 +187,7 @@ unsigned long long blankNthNibble(unsigned long long num, unsigned int n)
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1);                // number of bitshifts to do.
     unsigned long long blanker = ~(LAST_NIBBLE_BITMASK << bitshifts); // all 1s except for nth nibble.
-    return num & blanker;
+    return (num & blanker);
 }
 
 /*
@@ -194,7 +198,10 @@ unsigned long long insertNthNibble(unsigned long long num, unsigned long long ni
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
     unsigned long long inserter = nibble << bitshifts; // move nibble to correct spot.
-    return blankNthNibble(num, n) | inserter;
+    // debugPrint(nibble);
+    // debugPrint(inserter);
+    // debugPrint(blankNthNibble(num, n));
+    return (blankNthNibble(num, n) | inserter);
 }
 
 /*
@@ -407,7 +414,7 @@ string varsToFence(
     unsigned int fullmove)
 {
     // Turn unsigned long long into board string.
-    string boardString;
+    string boardString = "";
     for (int i = 0; i < BOARD_SIZE; i++)
     {
         unsigned int firstNibble = getNthNibble(board, i); // get last nibble.
@@ -517,8 +524,8 @@ Return the new board.
 unsigned long long applyMoveToBoard(unsigned long long board, unsigned int move)
 {
     // Get indices.
-    unsigned int start_index = getLastNibble(move);
-    unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
+    unsigned int end_index = getLastNibble(move);
+    unsigned int start_index = move >> 4; // get first nibble by rightshifting the move.
 
     // Get nibble at start.
     unsigned int start_nibble = getNthNibble(board, start_index);
@@ -539,8 +546,8 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> applyMove(
     unsigned int move)
 {
     // Get indices.
-    unsigned int start_index = getLastNibble(move);
-    unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
+    unsigned int end_index = getLastNibble(move);
+    unsigned int start_index = move >> 4; // get first nibble by rightshifting the move.
 
     // Get nibbles.
     unsigned int start_nibble = getNthNibble(board, start_index);
@@ -573,6 +580,7 @@ Get a vector of ints representing all legal moves by the given player.
 vector<unsigned int> getMoves(unsigned long long board, bool player)
 {
     vector<unsigned int> moves;
+    unsigned long long originalBoard = board;
     unsigned int opponentAttackedSquares = getAttackedSquares(board, !player);
     unsigned int occupancy = getOccupancy(board);                     // store occupancy.
     unsigned int playerOccupancy = getPlayerOccupancy(board, player); // store player occupancy.
@@ -616,7 +624,7 @@ vector<unsigned int> getMoves(unsigned long long board, bool player)
                 if (1 & validMovementSquares)
                 {                                           // check if this has been flagged as a valid end move.
                     unsigned int move = (start << 4) | end; // build move.
-                    if (!isInCheck(applyMoveToBoard(board, move), player))
+                    if (!isInCheck(applyMoveToBoard(originalBoard, move), player))
                     {
                         // Only add the move if, when we try it, the player is not in check.
                         moves.push_back(move);
@@ -629,6 +637,22 @@ vector<unsigned int> getMoves(unsigned long long board, bool player)
     }
 
     return moves;
+}
+
+/*
+Get a vector of unsigned long longs representing all legal next boards, given a
+player to move next.
+*/
+vector<unsigned long long> getNextBoards(unsigned long long board, bool player)
+{
+    vector<unsigned long long> nextBoards;
+    vector<unsigned int> moves = getMoves(board, player);
+    for (unsigned int move : moves)
+    {
+        unsigned long long nextBoard = applyMoveToBoard(board, move);
+        nextBoards.push_back(nextBoard);
+    }
+    return nextBoards;
 }
 
 /*
@@ -713,8 +737,8 @@ void playbackMoves(
     for (unsigned int move : moves)
     {
         tie(board, active, halfmove, fullmove) = applyMove(board, active, halfmove, fullmove, move);
-        unsigned int start_index = getLastNibble(move);
-        unsigned int end_index = move >> 4; // get first nibble by rightshifting the move.
+        unsigned int end_index = getLastNibble(move);
+        unsigned int start_index = move >> 4; // get first nibble by rightshifting the move.
         std::cout << varsToFence(board, active, halfmove, fullmove);
         std::cout << " after " << start_index << " -> " << end_index << std::endl;
     }
@@ -727,28 +751,32 @@ Uses composites, where are just the active flag and board together.
 void explore(unsigned int max_level)
 {
     unsigned int current_level = 0;
-    set<unsigned long long> seenComposites;
-    set<unsigned long long> composites = {(1 << 16) | START_BOARD};
-    set<unsigned long long> nextComposites;
+    set<unsigned long long> seenBoardsWhite;
+    set<unsigned long long> seenBoardsBlack;
+    set<unsigned long long> boards = {START_BOARD};
+    set<unsigned long long> nextBoards;
 
-    while (composites.size() > 0 && current_level < max_level)
+    while (boards.size() > 0 && current_level < max_level)
     {
-        seenComposites.insert(composites.begin(), composites.end());
-        for (unsigned long long composite : composites)
+        bool active = (current_level % 2 == 0);
+        set<unsigned long long> &seenBoards = active ? seenBoardsWhite : seenBoardsBlack;
+        set<unsigned long long> &seenBoardsOpposite = active ? seenBoardsBlack : seenBoardsWhite;
+        seenBoards.insert(boards.begin(), boards.end());
+        for (unsigned long long board : boards)
         {
-            unsigned long long board = composite & 65535;            // get board.
-            bool active = composite >> 16;                           // get active flag.
-            vector<unsigned int> moves = getMoves(board, composite); // get moves.
-            for (unsigned int move : moves)
+            vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
+            for (unsigned long long possibleNextBoard : possibleNextBoards)
             {
-                unsigned long long nextBoard = applyMoveToBoard(board, move);
-                nextComposites.insert((!active << 16) | nextBoard);
+                if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
+                {
+                    nextBoards.insert(possibleNextBoard);
+                }
             }
         }
-        composites = nextComposites;
-        nextComposites.clear();
+        boards = nextBoards;
+        nextBoards.clear();
         current_level += 1;
-        std::cout << "# positions reachable after " << current_level << " halfmoves = " << composites.size() << std::endl;
+        std::cout << "# positions reachable after " << current_level << " halfmoves = " << boards.size() << std::endl;
     }
     std::cout << "No more traversable positions after this depth." << std::endl;
 }
