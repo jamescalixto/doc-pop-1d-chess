@@ -769,7 +769,6 @@ void explore(unsigned int max_level)
             vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
             for (unsigned long long possibleNextBoard : possibleNextBoards)
             {
-                print(varsToFence(possibleNextBoard, active, 0, 0));
                 if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
                 {
                     nextBoards.insert(possibleNextBoard);
