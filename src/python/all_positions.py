@@ -5,17 +5,20 @@ import position as Position
 
 def explore(max_level):
     """Explore and enumerate the game tree."""
-    seen_positions = set()
+    seen_boards = set()
     current_level = 0
     positions = {Position.START_POSITION}
     next_positions = set()
 
     @functools.lru_cache(maxsize=1)  # avoid double call.
     def is_candidate(position):
-        return position not in seen_positions and position not in next_positions
+        board, active, halfmove, fullmove = position.split(" ")
+        return (board, active) not in seen_boards and position not in next_positions
 
     while len(positions) > 0 and current_level < max_level:
-        seen_positions = seen_positions.union(positions)
+        seen_boards = seen_boards.union(
+            {(position.split(" ")[0], position.split(" ")[1]) for position in positions}
+        )
         next_positions = {
             Position.apply_move(position, next_move)
             for position in positions
@@ -33,4 +36,5 @@ def explore(max_level):
     print("No more traversable positions after this depth.")
 
 
-cProfile.run("explore(11)")
+# cProfile.run("explore(5)")
+explore(5)

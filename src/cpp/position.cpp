@@ -87,7 +87,7 @@ space and the YYYY nibble indicates the ending space.
 
 // Handy constants.
 const unsigned int BOARD_SIZE = 16;
-const unsigned long long START_POSITION = 3991632928627678971;
+const unsigned long long START_BOARD = 3991632928627678971;
 const unsigned long long FIRST_NIBBLE_BITMASK = 240; // bitmask to get first nibble (of a byte).
 const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibble.
 
@@ -619,7 +619,6 @@ vector<unsigned int> getMoves(unsigned long long board, bool player)
                     if (!isInCheck(applyMoveToBoard(board, move), player))
                     {
                         // Only add the move if, when we try it, the player is not in check.
-                        std::cout << start << " " << end << std::endl;
                         moves.push_back(move);
                     }
                 }
@@ -721,22 +720,56 @@ void playbackMoves(
     }
 }
 
+/*
+Explore and enumerate the game tree.
+Uses composites, where are just the active flag and board together.
+*/
+void explore(unsigned int max_level)
+{
+    unsigned int current_level = 0;
+    set<unsigned long long> seenComposites;
+    set<unsigned long long> composites = {(1 << 16) | START_BOARD};
+    set<unsigned long long> nextComposites;
+
+    while (composites.size() > 0 && current_level < max_level)
+    {
+        seenComposites.insert(composites.begin(), composites.end());
+        for (unsigned long long composite : composites)
+        {
+            unsigned long long board = composite & 65535;            // get board.
+            bool active = composite >> 16;                           // get active flag.
+            vector<unsigned int> moves = getMoves(board, composite); // get moves.
+            for (unsigned int move : moves)
+            {
+                unsigned long long nextBoard = applyMoveToBoard(board, move);
+                nextComposites.insert((!active << 16) | nextBoard);
+            }
+        }
+        composites = nextComposites;
+        nextComposites.clear();
+        current_level += 1;
+        std::cout << "# positions reachable after " << current_level << " halfmoves = " << composites.size() << std::endl;
+    }
+    std::cout << "No more traversable positions after this depth." << std::endl;
+}
+
 int main()
 {
     importLookupTables(attackLookup);
+    explore(5);
 
-    // debugPrint(getAttackedSquares(START_POSITION, false));
-    string fence = "KQRBNP....pnbrqk w 0 1";
+    // // debugPrint(getAttackedSquares(START_BOARD, false));
+    // string fence = "KQRBNP....pnbrqk w 0 1";
 
-    // Declare variables to store position information.
-    unsigned long long board;
-    bool active;
-    unsigned int halfmove, fullmove;
+    // // Declare variables to store position information.
+    // unsigned long long board;
+    // bool active;
+    // unsigned int halfmove, fullmove;
 
-    tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+    // tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
 
-    debugPrint(board);
-    std::cout << varsToFence(board, active, fullmove, halfmove) << std::endl;
+    // debugPrint(board);
+    // std::cout << varsToFence(board, active, fullmove, halfmove) << std::endl;
 
-    getMoves(board, active);
+    // getMoves(board, active);
 }
