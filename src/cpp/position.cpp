@@ -531,7 +531,8 @@ unsigned long long applyMoveToBoard(unsigned long long board, unsigned int move)
     unsigned int start_nibble = getNthNibble(board, start_index);
 
     // Replace and return.
-    return insertNthNibble(board, start_nibble, end_index);
+    unsigned long long boardBlankStart = blankNthNibble(board, start_index);
+    return insertNthNibble(boardBlankStart, start_nibble, end_index);
 }
 
 /*
@@ -569,7 +570,8 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> applyMove(
         fullmove += 1;
     }
 
-    board = insertNthNibble(board, start_nibble, end_index);
+    unsigned long long boardBlankStart = blankNthNibble(board, start_index);
+    board = insertNthNibble(boardBlankStart, start_nibble, end_index);
     active = !active;
     return make_tuple(board, active, halfmove, fullmove);
 }
@@ -767,6 +769,7 @@ void explore(unsigned int max_level)
             vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
             for (unsigned long long possibleNextBoard : possibleNextBoards)
             {
+                print(varsToFence(possibleNextBoard, active, 0, 0));
                 if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
                 {
                     nextBoards.insert(possibleNextBoard);
