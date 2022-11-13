@@ -3,38 +3,51 @@ import functools
 import position as Position
 
 
+def position_to_state(position):
+    board, active, halfmove, fullmove = position.split(" ")
+    return (board, active)
+
+
+def state_to_position(tup):
+    return " ".join((tup[0], tup[1], 0, 0))
+
+
 def explore(max_level):
-    """Explore and enumerate the game tree."""
-    seen_boards = set()
+    """Explore and enumerate the game tree.
+    We use "states" — the more lightweight (board, active) tuple — instead of the full
+    position string.
+    """
+    seen_states = set()
     current_level = 0
-    positions = {Position.START_POSITION}
-    next_positions = set()
+    states = {position_to_state(Position.START_POSITION)}
+    next_states = set()
 
     @functools.lru_cache(maxsize=1)  # avoid double call.
-    def is_candidate(position):
-        board, active, halfmove, fullmove = position.split(" ")
-        return (board, active) not in seen_boards and position not in next_positions
+    def is_candidate(state):
+        return state not in seen_states and state not in next_states
 
-    while len(positions) > 0 and current_level < max_level:
-        seen_boards = seen_boards.union(
-            {(position.split(" ")[0], position.split(" ")[1]) for position in positions}
-        )
-        next_positions = {
-            Position.apply_move(position, next_move)
-            for position in positions
-            for next_move in Position.get_current_moves(position)
-            if is_candidate(Position.apply_move(position, next_move))
+    while len(states) > 0 and current_level < max_level:
+        active = "w" if current_level % 2 == 0 else "b"
+        seen_states = seen_states.union(states)
+        next_states = {
+            (
+                Position.apply_move_board(board, next_move),
+                Position.opposite_color(active),
+            )
+            for (board, active) in states
+            for next_move in Position.get_moves(board, active)
+            if is_candidate(Position.apply_move_board(board, next_move))
         }
-        positions = next_positions
-        next_positions = set()
+        states = next_states
+        next_states = set()
         current_level += 1
         print(
             "# positions reachable after {} halfmoves = {}".format(
-                str(current_level).rjust(3), len(positions)
+                str(current_level).rjust(3), len(states)
             )
         )
     print("No more traversable positions after this depth.")
 
 
 # cProfile.run("explore(5)")
-explore(5)
+explore(3)

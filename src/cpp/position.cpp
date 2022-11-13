@@ -752,15 +752,15 @@ Uses composites, where are just the active flag and board together.
 */
 void explore(unsigned int max_level)
 {
-    unsigned int current_level = 0;
+    unsigned int currentLevel = 0;
     set<unsigned long long> seenBoardsWhite;
     set<unsigned long long> seenBoardsBlack;
     set<unsigned long long> boards = {START_BOARD};
     set<unsigned long long> nextBoards;
 
-    while (boards.size() > 0 && current_level < max_level)
+    while (boards.size() > 0 && currentLevel < max_level)
     {
-        bool active = (current_level % 2 == 0);
+        bool active = (currentLevel % 2 == 0);
         set<unsigned long long> &seenBoards = active ? seenBoardsWhite : seenBoardsBlack;
         set<unsigned long long> &seenBoardsOpposite = active ? seenBoardsBlack : seenBoardsWhite;
         seenBoards.insert(boards.begin(), boards.end());
@@ -777,8 +777,8 @@ void explore(unsigned int max_level)
         }
         boards = nextBoards;
         nextBoards.clear();
-        current_level += 1;
-        std::cout << "# positions reachable after " << current_level << " halfmoves = " << boards.size() << std::endl;
+        currentLevel += 1;
+        std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
     }
     std::cout << "No more traversable positions after this depth." << std::endl;
 }
@@ -786,7 +786,7 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(5);
+    explore(3);
 
     // // debugPrint(getAttackedSquares(START_BOARD, false));
     // string fence = "KQRBNP....pnbrqk w 0 1";
