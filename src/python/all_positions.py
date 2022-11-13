@@ -42,7 +42,7 @@ def explore(max_level):
         next_states = set()
         current_level += 1
         print(
-            "# positions reachable after {} halfmoves = {}".format(
+            "# new positions reachable after {} halfmoves = {}".format(
                 str(current_level).rjust(3), len(states)
             )
         )
@@ -50,4 +50,4 @@ def explore(max_level):
 
 
 # cProfile.run("explore(5)")
-explore(3)
+explore(5)
