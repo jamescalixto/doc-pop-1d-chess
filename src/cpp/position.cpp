@@ -766,19 +766,40 @@ void explore(unsigned int max_level)
         seenBoards.insert(boards.begin(), boards.end());
         for (unsigned long long board : boards)
         {
-            vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
-            for (unsigned long long possibleNextBoard : possibleNextBoards)
+            // vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
+
+            vector<unsigned long long> possibleNextBoards;
+            vector<unsigned int> moves = getMoves(board, active);
+            for (unsigned int move : moves)
             {
+                unsigned int end_index = getLastNibble(move);
+                unsigned int start_index = move >> 4;
+                unsigned long long possibleNextBoard = applyMoveToBoard(board, move);
                 if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
                 {
+                    print(varsToFence(possibleNextBoard, !active, 0, 0));
+                    std::cout << "    (" << start_index << ", " << end_index << ") ";
+                    print(varsToFence(board, !active, 0, 0));
                     nextBoards.insert(possibleNextBoard);
                 }
             }
+
+            // for (unsigned long long possibleNextBoard : possibleNextBoards)
+            // {
+            //     if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
+            //     {
+            //         nextBoards.insert(possibleNextBoard);
+            //     }
+            // }
         }
         boards = nextBoards;
         nextBoards.clear();
         currentLevel += 1;
         std::cout << "# new positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
+        // for (unsigned long long b : boards)
+        // {
+        //     print(varsToFence(b, !active, 0, 0));
+        // }
     }
     std::cout << "No more traversable positions after this depth." << std::endl;
 }
@@ -786,7 +807,7 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(12);
+    explore(4);
 
     // // debugPrint(getAttackedSquares(START_BOARD, false));
     // string fence = "KQRBNP....pnbrqk w 0 1";
