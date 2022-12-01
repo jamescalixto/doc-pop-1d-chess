@@ -778,7 +778,7 @@ void explore(unsigned int max_level)
         boards = nextBoards;
         nextBoards.clear();
         currentLevel += 1;
-        std::cout << "# new positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
+        std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
     }
     std::cout << "No more traversable positions after this depth." << std::endl;
 }
@@ -786,7 +786,7 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(8);
+    explore(15);
 
     // string fence = "KQRBNP....pnbrqk w 0 1";
 

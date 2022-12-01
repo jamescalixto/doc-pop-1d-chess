@@ -42,14 +42,12 @@ def explore(max_level):
         next_states = set()
         current_level += 1
         print(
-            "# new positions reachable after {} halfmoves = {}".format(
+            "# positions reachable after {} halfmoves = {}".format(
                 str(current_level).rjust(3), len(states)
             )
         )
-        # for s in states:
-        #     print(" ".join((str(i) for i in (s[0], s[1], 0, 0))))
     print("No more traversable positions after this depth.")
 
 
 # cProfile.run("explore(5)")
-explore(8)
+explore(12)
