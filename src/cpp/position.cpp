@@ -775,11 +775,18 @@ void explore(unsigned int max_level)
                 unsigned int end_index = getLastNibble(move);
                 unsigned int start_index = move >> 4;
                 unsigned long long possibleNextBoard = applyMoveToBoard(board, move);
-                if (!seenBoardsOpposite.count(possibleNextBoard) && !nextBoards.count(possibleNextBoard))
+                // if (board == 3991632931311378171)
+                // {
+                //     std::cout << "    (" << start_index << ", " << end_index << ") " << std::endl;
+                //     std::cout << seenBoardsOpposite.count(possibleNextBoard) << std::endl;
+                //     std::cout << nextBoards.count(possibleNextBoard) << std::endl;
+                // }
+
+                if (!seenBoardsOpposite.count(possibleNextBoard) || !nextBoards.count(possibleNextBoard))
                 {
-                    print(varsToFence(possibleNextBoard, !active, 0, 0));
-                    std::cout << "    (" << start_index << ", " << end_index << ") ";
-                    print(varsToFence(board, !active, 0, 0));
+                    // print(varsToFence(possibleNextBoard, !active, 0, 0));
+                    // std::cout << "    (" << start_index << ", " << end_index << ") ";
+                    // print(varsToFence(board, !active, 0, 0));
                     nextBoards.insert(possibleNextBoard);
                 }
             }
@@ -807,7 +814,18 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(4);
+    explore(8);
+
+    // string fence = "KQRBNP..n.p.brqk b 0 0";
+    // unsigned long long board;
+    // bool active;
+    // unsigned int halfmove, fullmove;
+    // tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+
+    // for (unsigned long long b : getNextBoards(board, active))
+    // {
+    //     std::cout << varsToFence(b, active, 0, 0) << std::endl;
+    // }
 
     // // debugPrint(getAttackedSquares(START_BOARD, false));
     // string fence = "KQRBNP....pnbrqk w 0 1";
