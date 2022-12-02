@@ -50,4 +50,4 @@ def explore(max_level):
 
 
 # cProfile.run("explore(5)")
-explore(12)
+explore(18)
