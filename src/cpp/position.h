@@ -14,8 +14,6 @@ using std::string;
 using std::tuple, std::make_tuple, std::tie;
 using std::vector;
 
-#include <typeinfo>
-
 /*
 Externally, position is expressed as a string in a format analogous to FEN (Forsyth-
 Edwards Notation). I will call this FENCE notation — short for Forsyth-Edwards Notation
@@ -90,10 +88,6 @@ const unsigned int BOARD_SIZE = 16;
 const unsigned long long START_BOARD = 3991632928627678971;
 const unsigned long long FIRST_NIBBLE_BITMASK = 240; // bitmask to get first nibble (of a byte).
 const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibble.
-
-// 0-indexed start positions of pawns. Used to determine if they can move two spaces.
-unsigned int PAWN_START_WHITE = 5;
-unsigned int PAWN_START_BLACK = 10;
 
 // Import saved lookup tables for sliding rook-like and bishop-like attacks.
 // This needs to be called in main() to initialize the variables.
