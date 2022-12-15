@@ -1,17 +1,17 @@
 #include <bitset>
 #include <fstream>
 #include <iostream>
-#include <map>
+#include <unordered_map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
 
-using std::map;
 using std::set;
 using std::string;
 using std::tuple, std::make_tuple, std::tie;
+using std::unordered_map;
 using std::vector;
 
 /*
@@ -91,8 +91,8 @@ const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibb
 
 // Import saved lookup tables for sliding rook-like and bishop-like attacks.
 // This needs to be called in main() to initialize the variables.
-map<unsigned long long, unsigned int> attackLookup;
-void importLookupTables(map<unsigned long long, unsigned int> &attackLookup)
+unordered_map<unsigned long long, unsigned int> attackLookup;
+void importLookupTables(unordered_map<unsigned long long, unsigned int> &attackLookup)
 {
     std::ifstream file("mapping.txt");
     string line;

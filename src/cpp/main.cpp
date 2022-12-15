@@ -1,9 +1,19 @@
 #include "position.h"
+#include <functional>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
+
+using std::function;
+using std::tuple, std::make_tuple, std::tie;
+using std::unordered_map;
+using std::vector;
 
 // Value of game outcomes.
 const int SCORE_WIN = 100;
 const int SCORE_LOSS = -100;
 const int SCORE_DRAW = 0;
+const int SCORE_UNFINISHED = -1;
 
 /*
 Given a board, score it for the given player using an estimate.
@@ -46,7 +56,54 @@ int scorePositionEstimate(unsigned long long board, bool active)
 /*
 Given a board, score it for the given player if the game is over.
 */
-int scorePositionDefinite(unsigned long long board, bool active, unsigned int fullmove)
+int scorePositionDefinite(unsigned long long board, bool active, unsigned int halfmove, unsigned int fullmove)
+{
+    int state = checkPosition(board, active, halfmove, fullmove);
+    switch (state)
+    {
+    case 4:
+        return SCORE_DRAW;
+    case 9:
+        return (active ? SCORE_WIN : SCORE_LOSS);
+    case 8:
+        return (active ? SCORE_LOSS : SCORE_WIN);
+    case 5:
+        return SCORE_DRAW;
+    case 6:
+        return SCORE_DRAW;
+    case 7:
+        return SCORE_DRAW;
+    default:
+        return SCORE_UNFINISHED;
+    }
+}
+
+/*
+Score a position for a given player. Return a tuple containing the best score for that
+player and the movelist that leads to that best score.
+*/
+tuple<int, vector<unsigned int>> scorePosition(
+    unsigned long long board,
+    bool active,                // starting player to optimize score for.
+    unsigned int halfmove,      // halfmove count.
+    unsigned int fullmove,      // fullmove count.
+    int alpha = SCORE_LOSS - 1, // minimum score that the maximizing player is assured of.
+    int beta = SCORE_WIN + 1,   // maximum depth to search, in ply (a turn by a single player).
+    unsigned int depth = 0,     // current depth.
+    unsigned int maxDepth = -1, // maximum depth to search, in ply (a turn by a single player).
+    function<int(
+        unsigned long long,
+        bool,
+        unsigned int,
+        unsigned int)>
+        maxDepthHeuristic = scorePositionDefinite, // function to use to estimate score.
+    function<vector<unsigned int>(
+        unsigned long long,
+        bool)>
+        nextMoveHeuristic = getMoves,                                // function to use to order moves.
+    vector<unsigned int> movelist = {},                              // list of moves made so far.
+    unordered_map<unsigned long long, unsigned int> seenBoards = {}, // counter of seen boards; used for threefold repetition.
+    bool findShortestLine = true)                                    // prioritize finding shortest line (longer).
 {
 }
 
