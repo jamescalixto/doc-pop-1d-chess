@@ -79,8 +79,9 @@ int scorePositionDefinite(unsigned long long board, bool active, unsigned int ha
 }
 
 /*
-Score a position for a given player. Return a tuple containing the best score for that
-player and the movelist that leads to that best score.
+Given a position, score it (assuming that the opponent plays optimally) and return the
+score and the path to that end state. Uses breadth-first-search recursively with a depth
+limit, after which it estimates the position using an estimator function.
 */
 tuple<int, vector<unsigned int>> scorePosition(
     unsigned long long board,
