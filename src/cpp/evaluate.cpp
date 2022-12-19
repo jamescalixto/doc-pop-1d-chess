@@ -87,6 +87,7 @@ limit, after which it estimates the position using an estimator function.
 */
 tuple<int, vector<unsigned int>> scorePosition(
     bool startingPlayer,        // starting player to optimize score for.
+    int maxDepth,               // maximum depth to search, in ply (a turn by a single player).
     unsigned long long board,   // current board state.
     bool active,                // current player to move.
     unsigned int halfmove,      // halfmove count.
@@ -94,7 +95,6 @@ tuple<int, vector<unsigned int>> scorePosition(
     int alpha = SCORE_LOSS - 1, // minimum score that the maximizing player is assured of.
     int beta = SCORE_WIN + 1,   // maximum depth to search, in ply (a turn by a single player).
     int depth = 0,              // current depth.
-    int maxDepth = -1,          // maximum depth to search, in ply (a turn by a single player).
     function<int(
         bool,
         unsigned long long)>
@@ -117,8 +117,6 @@ tuple<int, vector<unsigned int>> scorePosition(
     int definiteScore = scorePositionDefinite(startingPlayer, board, active, halfmove, fullmove);
     if (definiteScore != SCORE_UNFINISHED)
     {
-        print(varsToFence(board, active, halfmove, fullmove));
-        print(definiteScore);
         return make_tuple(definiteScore, movelist);
     }
 
@@ -173,6 +171,7 @@ tuple<int, vector<unsigned int>> scorePosition(
         tie(predictedScore, predictedMovelist) =
             scorePosition(
                 startingPlayer,
+                maxDepth,
                 potentialBoard,
                 potentialActive,
                 potentialHalfmove,
@@ -180,7 +179,6 @@ tuple<int, vector<unsigned int>> scorePosition(
                 alpha,
                 beta,
                 depth + 1,
-                maxDepth,
                 maxDepthHeuristic,
                 nextMoveHeuristic,
                 potentialMovelist,
@@ -230,26 +228,34 @@ tuple<int, vector<unsigned int>> scorePosition(
     return make_tuple(bestScore, bestMovelist);
 }
 
-int main()
+void evaluateFence(string fence, int maxDepth)
 {
     importLookupTables(attackLookup);
-
-    string fence = "K....n.........k b 0 1";
 
     // Declare variables to store position information.
     unsigned long long board;
     bool active;
     unsigned int halfmove, fullmove;
-
     tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
 
+    // Get the prediction.
     int predictedScore;
     vector<unsigned int> predictedMovelist;
-    tie(predictedScore, predictedMovelist) = scorePosition(active, board, active, halfmove, fullmove);
+    tie(predictedScore, predictedMovelist) = scorePosition(active, maxDepth, board, active, halfmove, fullmove);
 
-    std::cout << predictedScore << std::endl;
-    for (unsigned int predictedMove : predictedMovelist)
+    std::cout << "score=" << predictedScore << " (maxDepth=" << maxDepth << ")" << std::endl;
+    std::cout << varsToFence(board, active, halfmove, fullmove) << "  start" << std::endl;
+    for (unsigned int m : predictedMovelist)
     {
-        std::cout << predictedMove << std::endl;
+        tie(board, active, halfmove, fullmove) = applyMove(board, active, halfmove, fullmove, m);
+        string s = varsToFence(board, active, halfmove, fullmove);
+        std::cout << s << "  after (" << (m >> 4) << "," << (m & 15) << ")" << std::endl;
     }
+}
+
+int main()
+{
+    // evaluateFence("K....n.........k b 0 1", 10);
+    // evaluateFence("KQRB..NP.p.nbrqk b 0 1", 10);
+    evaluateFence(START_FENCE, 16);
 }

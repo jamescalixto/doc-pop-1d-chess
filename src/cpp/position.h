@@ -85,6 +85,7 @@ space and the YYYY nibble indicates the ending space.
 
 // Handy constants.
 const unsigned int BOARD_SIZE = 16;
+const string START_FENCE = "KQRBNP....pnbrqk w 0 1";
 const unsigned long long START_BOARD = 3991632928627678971;
 const unsigned long long FIRST_NIBBLE_BITMASK = 240; // bitmask to get first nibble (of a byte).
 const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibble.
@@ -110,13 +111,21 @@ void importLookupTables(vector<unsigned int> &attackLookup)
 /*
 Because I can.
 */
+void print(string s)
+{
+    std::cout << s << std::endl;
+}
 void print(unsigned long long i)
 {
     std::cout << i << std::endl;
 }
-void print(string s)
+void print(int i)
 {
-    std::cout << s << std::endl;
+    std::cout << i << std::endl;
+}
+void print(unsigned int i)
+{
+    std::cout << "(" << (i >> 4) << "," << (i & 15) << ")" << std::endl;
 }
 
 /*
