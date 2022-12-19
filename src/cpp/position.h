@@ -692,7 +692,7 @@ int checkPosition(
     {
         return 4; // hard cap at 150 fullmoves.
     }
-    else if (getMoves(board, active).size())
+    else if (getMoves(board, active).size() == 0)
     {
         if (isInCheck(board, active)) // if player to move is in check...
         {
