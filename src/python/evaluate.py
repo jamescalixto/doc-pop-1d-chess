@@ -165,7 +165,7 @@ def score_position(
                 break  # prune.
             alpha = max(alpha, best_score)
             if (
-                find_shortest_line and best_score == SCORE_WIN
+                not find_shortest_line and best_score == SCORE_WIN
             ):  # abort early if we've found a win.
                 return best_score, best_movelist
         else:  # similar (but opposite) case for the minimizing player.
@@ -182,7 +182,7 @@ def score_position(
                 break  # prune.
             beta = min(beta, best_score)
             if (
-                find_shortest_line and best_score == SCORE_LOSS
+                not find_shortest_line and best_score == SCORE_LOSS
             ):  # abort early if we've found a loss.
                 return best_score, best_movelist
 

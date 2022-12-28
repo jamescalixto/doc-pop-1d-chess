@@ -200,7 +200,7 @@ tuple<int, vector<unsigned int>> scorePosition(
                 break;
             }
             alpha = max(alpha, bestScore);
-            if (findShortestLine && bestScore == SCORE_WIN)
+            if (!findShortestLine && bestScore == SCORE_WIN)
             { // abort early if we've found a win.
                 return make_tuple(bestScore, bestMovelist);
             }
@@ -219,7 +219,7 @@ tuple<int, vector<unsigned int>> scorePosition(
                 break;
             }
             beta = min(beta, bestScore);
-            if (findShortestLine && bestScore == SCORE_LOSS)
+            if (!findShortestLine && bestScore == SCORE_LOSS)
             { // abort early if we've found a loss.
                 return make_tuple(bestScore, bestMovelist);
             }
@@ -243,7 +243,7 @@ void evaluateFence(string fence, int maxDepth)
     vector<unsigned int> predictedMovelist;
     tie(predictedScore, predictedMovelist) = scorePosition(active, maxDepth, board, active, halfmove, fullmove);
 
-    std::cout << "score=" << predictedScore << " (maxDepth=" << maxDepth << ")" << std::endl;
+    std::cout << "[" << (active ? "w" : "b") << "] " << (predictedScore > 0 ? "+" : "") << predictedScore << "  (depth=" << maxDepth << ")" << std::endl;
     std::cout << varsToFence(board, active, halfmove, fullmove) << "  start" << std::endl;
     for (unsigned int m : predictedMovelist)
     {
@@ -251,11 +251,15 @@ void evaluateFence(string fence, int maxDepth)
         string s = varsToFence(board, active, halfmove, fullmove);
         std::cout << s << "  after (" << (m >> 4) << "," << (m & 15) << ")" << std::endl;
     }
+    std::cout << std::endl;
 }
 
 int main()
 {
-    // evaluateFence("K....n.........k b 0 1", 10);
-    // evaluateFence("KQRB..NP.p.nbrqk b 0 1", 10);
-    evaluateFence(START_FENCE, 16);
+    evaluateFence("K....n.........k b 0 1", 10);
+    // evaluateFence("KQRB..NP.p.nbrqk b 0 1", 10); // should be b +100
+    // evaluateFence("KQRBN.P.pn..brqk w 0 1", 10); // should be w +100
+    // evaluateFence(START_FENCE, 16);
+    // evaluateFence(START_FENCE, 20);
+    // evaluateFence(START_FENCE, 24);
 }
