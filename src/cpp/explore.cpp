@@ -34,7 +34,7 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(12);
+    explore(14);
 
     // string fence = "KQRBNP....pnbrqk w 0 1";
 
