@@ -616,12 +616,6 @@ vector<unsigned int> getMoves(unsigned long long board, bool player)
                 validMovementSquares |= 128; // add index 8 to possible movement.
             }
 
-            // print(start);
-            // debugPrint(movementSquares);
-            // debugPrint((~playerOccupancy));
-            // debugPrint(validMovementSquares);
-            // std::cout << std::endl;
-
             // Loop over ending squares in validMovementSquares.
             // This way we get all the (start, end) moves.
             for (int end = BOARD_SIZE - 1; end >= 0; end--)
@@ -657,6 +651,74 @@ vector<unsigned long long> getNextBoards(unsigned long long board, bool player)
         unsigned long long nextBoard = applyMoveToBoard(board, move);
         nextBoards.push_back(nextBoard);
     }
+    return nextBoards;
+}
+
+/*
+Given a set of boards, return all possible next boards. Unlike looping over
+getNextBoards, this attempts to do this all in bulk, so some results are cached. This
+(in theory) should lead to a speedup, at the cost of not having nice and composable
+functions.
+*/
+set<unsigned long long> getNextBoardsBulk(set<unsigned long long> boards, bool player)
+{
+    set<unsigned long long> nextBoards;
+
+    // Iterate over each board, getting all possible (and importantly, not necessarily
+    // legal) next boards.
+    for (unsigned long long board : boards)
+    {
+        unsigned long long originalBoard = board;
+        unsigned int opponentAttackedSquares = getAttackedSquares(board, !player);
+        unsigned int occupancy = getOccupancy(board);                     // store occupancy.
+        unsigned int playerOccupancy = getPlayerOccupancy(board, player); // store player occupancy.
+
+        for (int start = BOARD_SIZE - 1; start >= 0; start--) // check every square for attacks.
+        {
+            // We are checking the [start] indexed space, from the left.
+            unsigned int piece_nibble = getLastNibble(board); // get last nibble.
+            if (isPieceOfPlayer(piece_nibble, player))
+            {
+                if (piece_nibble > 9)
+                {                      // black, non-pawn piece.
+                    piece_nibble %= 8; // get the white piece equivalent.
+                }
+                unsigned long long key = (piece_nibble << 20) | (start << 16) | (occupancy);
+                unsigned int movementSquares = attackLookup[key];
+                unsigned int validMovementSquares = movementSquares & (~playerOccupancy);
+
+                // Extra pawn movement, if available.
+                if (piece_nibble == 1 && start == 5 && !((occupancy >> 8) & 3))
+                // is white pawn in starting position and board does not have anything in spaces 6 and 7.
+                {
+                    validMovementSquares |= 256; // add index 7 to possible movement.
+                }
+                else if (piece_nibble == 9 && start == 10 && !((occupancy >> 6) & 3))
+                // is black pawn in starting position and board does not have anything in spaces 8 and 9.
+                {
+                    validMovementSquares |= 128; // add index 8 to possible movement.
+                }
+
+                // Loop over ending squares in validMovementSquares.
+                // This way we get all the (start, end) moves.
+                for (int end = BOARD_SIZE - 1; end >= 0; end--)
+                {
+                    if (1 & validMovementSquares)
+                    {                                                             // check if this has been flagged as a valid end move.
+                        unsigned int move = (start << 4) | end;                   // build move.
+                        nextBoards.insert(applyMoveToBoard(originalBoard, move)); // apply move.
+                    }
+                    validMovementSquares = validMovementSquares >> 1;
+                }
+            }
+            board = board >> 4;
+        }
+    }
+
+    // Build lambda to use and erase if new board puts player in check.
+    auto isInCheckTest = [&](unsigned long long b)
+    { return isInCheck(b, player); };
+    std::erase_if(nextBoards, isInCheckTest);
     return nextBoards;
 }
 
