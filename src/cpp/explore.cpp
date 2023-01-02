@@ -18,18 +18,11 @@ void explore(unsigned int max_level)
         set<unsigned long long> &seenBoards = active ? seenBoardsWhite : seenBoardsBlack;
         set<unsigned long long> &seenBoardsOpposite = active ? seenBoardsBlack : seenBoardsWhite;
         seenBoards.insert(boards.begin(), boards.end());
-        for (unsigned long long board : boards)
-        {
-            vector<unsigned long long> possibleNextBoards = getNextBoards(board, active); // get moves.
-            for (unsigned long long possibleNextBoard : possibleNextBoards)
-            {
-                if (!seenBoardsOpposite.count(possibleNextBoard) || !nextBoards.count(possibleNextBoard))
-                {
-                    nextBoards.insert(possibleNextBoard);
-                }
-            }
-        }
-        boards = nextBoards;
+
+        boards = getNextBoardsBulk(boards, active);
+        auto isInOppositeBoardsTest = [&](unsigned long long b)
+        { return seenBoardsOpposite.count(b); };
+        std::erase_if(boards, isInOppositeBoardsTest);
         nextBoards.clear();
         currentLevel += 1;
         // std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
