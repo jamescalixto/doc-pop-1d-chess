@@ -105,7 +105,7 @@ tuple<int, vector<unsigned int>> scorePosition(
         nextMoveHeuristic = getMoves,                                // function to use to order moves.
     vector<unsigned int> movelist = {},                              // list of moves made so far.
     unordered_map<unsigned long long, unsigned int> seenBoards = {}, // counter of seen boards; used for threefold repetition.
-    bool findShortestLine = true)                                    // prioritize finding shortest line (longer).
+    bool findShortestLine = false)                                   // prioritize finding shortest line (longer).
 {
     // Check for draw via threefold repetition using the boards we've seen.
     if (seenBoards.contains(board) && seenBoards[board] >= 3)
@@ -256,10 +256,10 @@ void evaluateFence(string fence, int maxDepth)
 
 int main()
 {
-    evaluateFence("K....n.........k b 0 1", 10);
+    // evaluateFence("K....n.........k b 0 1", 10);
     // evaluateFence("KQRB..NP.p.nbrqk b 0 1", 10); // should be b +100
     // evaluateFence("KQRBN.P.pn..brqk w 0 1", 10); // should be w +100
-    // evaluateFence(START_FENCE, 16);
+    evaluateFence(START_FENCE, 14);
     // evaluateFence(START_FENCE, 20);
     // evaluateFence(START_FENCE, 24);
 }
