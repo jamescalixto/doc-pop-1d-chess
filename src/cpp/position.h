@@ -1,3 +1,4 @@
+#include "constants.h"
 #include <bitset>
 #include <fstream>
 #include <iostream>
@@ -92,7 +93,8 @@ const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibb
 
 // Import saved lookup tables for sliding rook-like and bishop-like attacks.
 // This needs to be called in main() to initialize the variables.
-vector<unsigned int> attackLookup(10485729);
+vector<unsigned int>
+    attackLookup(10485729);
 void importLookupTables(vector<unsigned int> &attackLookup)
 {
     std::ifstream file("mapping.txt");
