@@ -125,7 +125,8 @@ void print(int i)
 }
 void print(unsigned int i)
 {
-    std::cout << "(" << (i >> 4) << "," << (i & 15) << ")" << std::endl;
+    std::cout << i << std::endl;
+    // std::cout << "(" << (i >> 4) << "," << (i & 15) << ")" << std::endl;
 }
 
 /*
