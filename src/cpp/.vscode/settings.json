@@ -72,5 +72,6 @@
         "iomanip": "cpp",
         "stack": "cpp",
         "set": "cpp"
-    }
+    },
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc"
 }

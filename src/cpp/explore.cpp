@@ -19,10 +19,14 @@ void explore(unsigned int max_level)
         set<unsigned long long> &seenBoardsOpposite = active ? seenBoardsBlack : seenBoardsWhite;
         seenBoards.insert(boards.begin(), boards.end());
 
+        // Get set of all next boards in bulk, and then remove them from the set if
+        // we've seen them before.
         boards = getNextBoardsBulk(boards, active);
         auto isInOppositeBoardsTest = [&](unsigned long long b)
         { return seenBoardsOpposite.count(b); };
         std::erase_if(boards, isInOppositeBoardsTest);
+
+        // Clear the set of next boards and continue the loop.
         nextBoards.clear();
         currentLevel += 1;
         // std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
@@ -34,7 +38,7 @@ void explore(unsigned int max_level)
 int main()
 {
     importLookupTables(attackLookup);
-    explore(14);
+    explore(24);
 
     // string fence = "KQRBNP....pnbrqk w 0 1";
 
