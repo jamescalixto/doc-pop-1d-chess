@@ -43,7 +43,7 @@ Uses composites, where are just the active flag and board together.
 */
 void explore(unsigned int max_level)
 {
-    unsigned int currentLevel = 1;
+    unsigned int currentLevel = 0;
     set<unsigned long long> seenBoardsWhite;
     set<unsigned long long> seenBoardsBlack;
     set<unsigned long long> boards = {START_BOARD};
@@ -56,18 +56,10 @@ void explore(unsigned int max_level)
         set<unsigned long long> &seenBoardsOpposite = active ? seenBoardsBlack : seenBoardsWhite;
         seenBoards.insert(boards.begin(), boards.end());
 
-        // Get set of all next boards in bulk, and then remove them from the set if
-        // we've seen them before.
+        // Get set of all next boards in bulk.
         boards = getNextBoardsBulk(boards, active);
-        auto isInOppositeBoardsTest = [&](unsigned long long b)
-        { return seenBoardsOpposite.count(b); };
-        std::erase_if(boards, isInOppositeBoardsTest);
-
-        // Clear the set of next boards and continue the loop.
-        nextBoards.clear();
         currentLevel += 1;
-        // std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
-        std::cout << "# positions traversed after " << currentLevel - 1 << " halfmoves = " << seenBoardsWhite.size() + seenBoardsBlack.size() << std::endl;
+        std::cout << "# positions reachable after " << currentLevel << " halfmoves = " << boards.size() << std::endl;
     }
     std::cout << "No more traversable positions after this depth." << std::endl;
 }
@@ -76,6 +68,7 @@ int main()
 {
     importLookupTables(attackLookup);
     explore(8);
+    exploreOriginal(8);
 
     // string fence = "KQRBNP....pnbrqk w 0 1";
 

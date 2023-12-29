@@ -749,7 +749,7 @@ previous turn would have been prevented.
 Unlike the official rules of chess, the 50-move rule is automatically enforced as a
 draw. The game is also a draw at 150 fullmoves.
 
-Threefold repetition cannot be tested within a single position.
+Threefold repetition cannot be tested within a single position, so it is excluded here.
 */
 int checkPosition(
     unsigned long long board,
