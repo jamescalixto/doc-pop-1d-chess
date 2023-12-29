@@ -216,7 +216,10 @@ tuple<int, vector<unsigned int>> scorePosition(
     return make_tuple(bestScore, bestMovelist);
 }
 
-void evaluateFence(string fence, int maxDepth)
+/**
+ * Evaluates the given FENCE string to the given depth and prints the result.
+ */
+void evaluateFenceVerbose(string fence, int maxDepth)
 {
     importLookupTables(attackLookup);
 
