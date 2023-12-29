@@ -1,8 +1,4 @@
 *.pyc
-*.vscode
+**/.vscode/
 *.json
 *.txt
-*.*
-!/.gitignore
-!/*.vscode
-!/*.json
