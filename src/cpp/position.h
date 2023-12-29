@@ -15,7 +15,7 @@ using std::unordered_map;
 using std::vector;
 
 /*
-Externally, position is expressed as a string in a format analogous to FEN (Forsyth-
+Externally, position is expressed as a string in a format similar to FEN (Forsyth-
 Edwards Notation). I will call this FENCE notation — short for Forsyth-Edwards Notation
 (Calixto Extension).
 
@@ -31,7 +31,7 @@ A record contains four fields, separated by a space. The fields are:
   3. Halfmove clock; i.e., the number of halfmoves since the last capture or pawn
     advance, used for the fifty-move rule.
   4. Fullmove number; i.e., the number of the full move. It starts at 1 and is
-    increment after black's move.
+    incremented after black's move.
 
 Note that castling and en passant fields, which are in FEN, are excluded due to their
 irrelevance. Promotion is also impossible, as a pawn has no way around the opponent
@@ -201,9 +201,6 @@ unsigned long long insertNthNibble(unsigned long long num, unsigned long long ni
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
     unsigned long long inserter = nibble << bitshifts; // move nibble to correct spot.
-    // debugPrint(nibble);
-    // debugPrint(inserter);
-    // debugPrint(blankNthNibble(num, n));
     return (blankNthNibble(num, n) | inserter);
 }
 
@@ -451,7 +448,7 @@ unsigned int getPieceSet(unsigned long long board)
 }
 
 /*
-Get occupancy as a 16-bit number.
+Get (as a bitflag) occupancy as a 16-bit number.
 */
 unsigned int getOccupancy(unsigned long long board)
 {
@@ -466,7 +463,7 @@ unsigned int getOccupancy(unsigned long long board)
 }
 
 /*
-Get occupancy, for a given player, as a 16-bit number.
+Get (as a bitflag) occupancy, for a given player, as a 16-bit number.
 */
 unsigned int getPlayerOccupancy(unsigned long long board, bool player)
 {

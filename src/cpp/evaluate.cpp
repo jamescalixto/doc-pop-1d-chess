@@ -104,15 +104,8 @@ tuple<int, vector<unsigned int>> scorePosition(
         bool)>
         nextMoveHeuristic = getMoves,   // function to use to order moves.
     vector<unsigned int> movelist = {}, // list of moves made so far.
-    // unordered_map<unsigned long long, unsigned int> seenBoards = {}, // counter of seen boards; used for threefold repetition.
-    bool findShortestLine = false) // prioritize finding shortest line (longer).
+    bool findShortestLine = false)      // prioritize finding shortest line (longer).
 {
-    // Check for draw via threefold repetition using the boards we've seen.
-    // if (seenBoards.contains(board) && seenBoards[board] >= 3)
-    // {
-    //     return make_tuple(SCORE_DRAW, movelist);
-    // }
-
     // Check if game is over by other means.
     int definiteScore = scorePositionDefinite(startingPlayer, board, active, halfmove, fullmove);
     if (definiteScore != SCORE_UNFINISHED)
@@ -161,10 +154,6 @@ tuple<int, vector<unsigned int>> scorePosition(
         vector<unsigned int> potentialMovelist(movelist);
         potentialMovelist.push_back(potentialMove);
 
-        // // Make a copy of seen boards and increment the current board in it.
-        // unordered_map<unsigned long long, unsigned int> potentialSeenBoards(seenBoards);
-        // potentialSeenBoards[board]++;
-
         // Get the score of this potential position via recursion.
         int predictedScore;
         vector<unsigned int> predictedMovelist;
@@ -182,7 +171,6 @@ tuple<int, vector<unsigned int>> scorePosition(
                 maxDepthHeuristic,
                 nextMoveHeuristic,
                 potentialMovelist,
-                // potentialSeenBoards,
                 findShortestLine);
 
         // Perform alpha-beta pruning.
