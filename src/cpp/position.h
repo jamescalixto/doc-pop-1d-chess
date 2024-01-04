@@ -113,22 +113,21 @@ void importLookupTables(vector<unsigned int> &attackLookup)
 /*
 Because I can.
 */
-void print(string s)
-{
-    std::cout << s << std::endl;
-}
-void print(unsigned long long i)
-{
-    std::cout << i << std::endl;
-}
-void print(int i)
-{
-    std::cout << i << std::endl;
-}
-void print(unsigned int i)
+void print(auto i)
 {
     std::cout << i << std::endl;
     // std::cout << "(" << (i >> 4) << "," << (i & 15) << ")" << std::endl;
+}
+void printMove(unsigned int m)
+{
+    std::cout << "(" << (m >> 4) << "," << (m & 15) << ")" << std::endl;
+}
+void print(vector<unsigned int> v)
+{
+    for (unsigned int i : v)
+    {
+        printMove(i);
+    }
 }
 
 /*
@@ -368,6 +367,23 @@ bool isQueen(unsigned int nibble)
 bool isKing(unsigned int nibble)
 {
     return nibble == 3 || nibble == 11;
+}
+
+/*
+Given a FENCE string, transform it into a numerical board representation.
+*/
+unsigned long long fenceToBoard(string fence)
+{
+    // Turn board string into unsigned long long.
+    unsigned long long board = 0; // clear the board, as we use bitwise operators instead of assignment.
+    string::iterator it;
+    for (it = fence.begin(); it != fence.end(); it++)
+    {
+        board = board << 4;                          // leftshift one nibble.
+        unsigned int pieceAsBits = pieceToBits(*it); // get numerical representation.
+        board |= pieceAsBits;                        // OR operator to add the new piece.
+    }
+    return board;
 }
 
 /*
