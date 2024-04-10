@@ -1,4 +1,5 @@
 #include "position.h"
+#include <time.h>
 
 /*
 Explore and enumerate the game tree.
@@ -29,8 +30,10 @@ void explore(unsigned int max_level)
 
 int main()
 {
+    clock_t tStart = clock();
     importLookupTables(attackLookup);
     explore(18);
+    printf("Time taken: %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
     // string fence = "KQRBNP....pnbrqk w 0 1";
 
