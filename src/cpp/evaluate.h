@@ -85,7 +85,7 @@ Given a position, score it (assuming that the opponent plays optimally) and retu
 score and the path to that end state. Uses breadth-first-search recursively with a depth
 limit, after which it estimates the position using an estimator function.
 */
-tuple<int, vector<unsigned int>> scorePosition(
+tuple<int, bool, vector<unsigned int>> scorePosition(
     bool startingPlayer,        // starting player to optimize score for.
     int maxDepth,               // maximum depth to search, in ply (a turn by a single player).
     unsigned long long board,   // current board state.
@@ -110,14 +110,14 @@ tuple<int, vector<unsigned int>> scorePosition(
     int definiteScore = scorePositionDefinite(startingPlayer, board, active, halfmove, fullmove);
     if (definiteScore != SCORE_UNFINISHED)
     {
-        return make_tuple(definiteScore, movelist);
+        return make_tuple(definiteScore, true, movelist);
     }
 
     // If not, the game isn't over so we need to score the position.
     // If we are at max depth, use the estimator to score.
     if (depth == maxDepth)
     {
-        return make_tuple(maxDepthHeuristic(startingPlayer, board), movelist);
+        return make_tuple(maxDepthHeuristic(startingPlayer, board), false,movelist);
     }
 
     // Otherwise, we are not at max depth, so we need to score the position.
@@ -134,6 +134,10 @@ tuple<int, vector<unsigned int>> scorePosition(
     // Store best score to compare against and the moves that lead to it.
     int bestScore = (active == startingPlayer) ? SCORE_LOSS - 1 : SCORE_WIN + 1;
     vector<unsigned int> bestMovelist;
+
+    // Store whether traversal terminated with an intedeterminate ending (i.e., traversal continues
+    // beyond max depth). This is TRUE if any traversal reached max depth without a definite ending.
+    bool indeterminateEnding = false;
 
     // Iterate over moves.
     for (unsigned int potentialMove : potentialMoves)
@@ -156,8 +160,9 @@ tuple<int, vector<unsigned int>> scorePosition(
 
         // Get the score of this potential position via recursion.
         int predictedScore;
+        bool predictedIndeterminateEnding;
         vector<unsigned int> predictedMovelist;
-        tie(predictedScore, predictedMovelist) =
+        tie(predictedScore, predictedIndeterminateEnding, predictedMovelist) =
             scorePosition(
                 startingPlayer,
                 maxDepth,
@@ -172,6 +177,9 @@ tuple<int, vector<unsigned int>> scorePosition(
                 nextMoveHeuristic,
                 potentialMovelist,
                 findShortestLine);
+
+        // If we found an intedeterminate ending, store it.
+        indeterminateEnding |= predictedIndeterminateEnding;
 
         // Perform alpha-beta pruning.
         if (active == startingPlayer) // maximizing player.
@@ -190,7 +198,7 @@ tuple<int, vector<unsigned int>> scorePosition(
             alpha = max(alpha, bestScore);
             if (!findShortestLine && bestScore == SCORE_WIN)
             { // abort early if we've found a win.
-                return make_tuple(bestScore, bestMovelist);
+                return make_tuple(bestScore, false,bestMovelist);
             }
         }
         else
@@ -209,11 +217,11 @@ tuple<int, vector<unsigned int>> scorePosition(
             beta = min(beta, bestScore);
             if (!findShortestLine && bestScore == SCORE_LOSS)
             { // abort early if we've found a loss.
-                return make_tuple(bestScore, bestMovelist);
+                return make_tuple(bestScore, false, bestMovelist);
             }
         }
     }
-    return make_tuple(bestScore, bestMovelist);
+    return make_tuple(bestScore, indeterminateEnding, bestMovelist);
 }
 
 /**
@@ -231,10 +239,11 @@ void evaluateFenceVerbose(string fence, int maxDepth)
 
     // Get the prediction.
     int predictedScore;
+    bool indeterminateEnding;
     vector<unsigned int> predictedMovelist;
-    tie(predictedScore, predictedMovelist) = scorePosition(active, maxDepth, board, active, halfmove, fullmove);
+    tie(predictedScore, indeterminateEnding, predictedMovelist) = scorePosition(active, maxDepth, board, active, halfmove, fullmove);
 
-    std::cout << "[" << (active ? "w" : "b") << "] " << (predictedScore > 0 ? "+" : "") << predictedScore << "  (depth=" << maxDepth << ")" << std::endl;
+    std::cout << "[" << (active ? "w" : "b") << "] " << (predictedScore > 0 ? "+" : "") << predictedScore << " (" << (indeterminateEnding ? "hit maxdepth" : "fully expanded") << ")  (depth=" << maxDepth << ")" << std::endl;
     std::cout << varsToFence(board, active, halfmove, fullmove) << "  start" << std::endl;
     for (unsigned int m : predictedMovelist)
     {

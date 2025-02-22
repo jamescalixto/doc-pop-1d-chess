@@ -140,11 +140,12 @@ int main() {
 // void testKingBoards()
 // {
 //     int score;
+//     bool indeterminateEnding;
 //     vector<unsigned int> path;
 //     for (unsigned long long kingBoard : KING_BOARDS)
 //     {
 //         print(varsToFence(kingBoard, true, 0, 0));
-//         tie(score, path) = scorePosition(true, 16, kingBoard, true, 0, 0);
+//         tie(score, indeterminateEnding, path) = scorePosition(true, 16, kingBoard, true, 0, 0);
 //         print(score);
 //     }
 // }
@@ -174,11 +175,12 @@ int main() {
 //     boards.shrink_to_fit();
 
 //     int score;
+//     bool indeterminateEnding;
 //     vector<unsigned int> path;
 //     for (unsigned long long board : boards)
 //     {
 //         print(varsToFence(board, true, 0, 0));
-//         tie(score, path) = scorePosition(false, 8, board, false, 0, 0);
+//         tie(score, indeterminateEnding, path) = scorePosition(false, 8, board, false, 0, 0);
 //         print(score);
 //     }
 // }
