@@ -110,14 +110,14 @@ tuple<int, bool, vector<unsigned int>> scorePosition(
     int definiteScore = scorePositionDefinite(startingPlayer, board, active, halfmove, fullmove);
     if (definiteScore != SCORE_UNFINISHED)
     {
-        return make_tuple(definiteScore, true, movelist);
+        return make_tuple(definiteScore, false, movelist);
     }
 
     // If not, the game isn't over so we need to score the position.
     // If we are at max depth, use the estimator to score.
     if (depth == maxDepth)
     {
-        return make_tuple(maxDepthHeuristic(startingPlayer, board), false,movelist);
+        return make_tuple(maxDepthHeuristic(startingPlayer, board), true, movelist);
     }
 
     // Otherwise, we are not at max depth, so we need to score the position.
