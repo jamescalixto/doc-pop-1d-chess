@@ -66,9 +66,47 @@ inline constexpr Value VALUE_ILLEGAL = 32766;
 
 enum class Mode
 {
-    Wdl,
-    Dtm,
+    Wdl, // win/draw/loss, ignoring the fifty-move rule
+    Dtm, // ... plus distance to mate, for verification at small material
+    Dtz, // win/draw/loss WITH the fifty-move rule, via distance to zeroing
 };
+
+/*
+The fifty-move rule, and why distance-to-zeroing is the quantity that settles it.
+
+Threefold repetition needs no machinery here: backward induction labels a position a win
+only if mate can be forced in finitely many moves, so a position the defender can hold
+forever simply never gets labelled and falls out as a draw. That is exactly what a
+repetition draw is.
+
+The fifty-move rule is different. It is not about who eventually wins but about how long
+the winner may take between irreversible moves, and it can turn a genuine forced win into
+a draw. Distance to mate does not answer it — a mate in 300 plies is perfectly legal if
+captures and pawn pushes keep resetting the clock, while a mate in 120 with no such moves
+is a draw. What matters is the clock, and the clock is reset by exactly the moves that
+leave a slice: captures and pawn moves. So
+
+    distance to zeroing = distance to the next slice exit
+
+and because a slice can only be ENTERED by a zeroing move, the clock is zero on entry and
+counts plies since. That makes the rule a depth bound of 100 on the backward pass inside
+each slice, rather than a hundredfold blowup of the state space.
+
+Values below carry a BUDGET rather than a mate distance: the number of plies of clock the
+mover needs to force the result. Encoding is the same +-(budget + 1) the distance-to-mate
+solver uses, so the same negation applies. A budget above 100 means the fifty-move rule
+bites first, and the position is a draw.
+
+Only the outcome is persisted, not the budget. Solving a slice needs to know whether its
+successors win under the rule — one trit — while the budgets matter only inside the slice
+being worked on. So a DTZ table costs the same 2.20 GiB as a plain win/draw/loss one.
+*/
+inline constexpr int MAX_CLOCK_BUDGET = 100; // fifty moves by each player
+inline constexpr int8_t DTZ_UNRESOLVED = 127;
+inline constexpr int8_t DTZ_ILLEGAL = 126;
+
+// Plies of clock the mover needs, given a +-(budget + 1) encoded value.
+inline int clockBudget(int value) { return (value > 0 ? value : -value) - 1; }
 
 inline bool isResolved(Value v) { return v != VALUE_UNRESOLVED; }
 inline bool isPlayable(Value v) { return v != VALUE_ILLEGAL && v != VALUE_UNRESOLVED; }
@@ -201,10 +239,13 @@ struct SolvePlan
     // Tables stay resident for the whole run; only one slice's transients exist at a time.
     uint64_t projectedPeakBytes() const { return tableBytes + largestTransientBytes; }
 
-    // 1 byte of label + 1 byte of counter + a 4-byte worklist slot, per position.
-    static uint64_t transientBytesFor(unsigned long long positions)
+    // Per position: labels, a move counter, and a queue slot. The fifty-move solver also
+    // carries a budget for the losing case, so it costs one byte more.
+    static uint64_t transientBytesFor(unsigned long long positions, Mode mode)
     {
-        return positions * (1 + 1 + sizeof(uint32_t));
+        const uint64_t perPosition = (mode == Mode::Dtz) ? (1 + 1 + 1 + sizeof(uint32_t))
+                                                         : (1 + 1 + sizeof(uint32_t));
+        return positions * perPosition;
     }
 };
 
@@ -262,6 +303,15 @@ public:
     }
 
     bool tracksDistance() const { return mode == Mode::Dtm; }
+
+    /*
+    Plies of clock before the fifty-move rule declares a draw. Always 100 in a real run.
+    Settable only so tests can shrink it: at small material every win is short, so with the
+    real limit the cap never triggers and a broken cap would pass unnoticed. Turning it
+    down forces the rule to bite everywhere.
+    */
+    void setClockLimit(int plies) { clockLimit = plies; }
+    int clockLimitPlies() const { return clockLimit; }
     bool mirroring() const { return useMirror; }
     Value negate(Value v) const { return negateValue(v, tracksDistance()); }
     string describe(Value v) const { return describeValue(v, tracksDistance()); }
@@ -289,15 +339,16 @@ public:
             result.slices += 1;
             result.placements += slice.size();
             result.positions += positions;
-            result.tableBytes += (mode == Mode::Wdl) ? (positions + 31) / 32 * sizeof(uint64_t)
-                                                     : positions * sizeof(Value);
+            result.tableBytes += (mode == Mode::Dtm) ? positions * sizeof(Value)
+                                                     : (positions + 31) / 32 * sizeof(uint64_t);
             if (positions > result.largestSlicePositions)
             {
                 result.largestSlicePositions = positions;
                 result.largestSlice = key;
             }
         }
-        result.largestTransientBytes = SolvePlan::transientBytesFor(result.largestSlicePositions);
+        result.largestTransientBytes =
+            SolvePlan::transientBytesFor(result.largestSlicePositions, mode);
         return result;
     }
 
@@ -595,6 +646,7 @@ private:
     std::unordered_map<uint32_t, SolvedSlice> solved;
     SolveStats totals;
     double progressInterval = 5.0;
+    int clockLimit = MAX_CLOCK_BUDGET;
     std::FILE *checkpoint = nullptr;
 
     static constexpr char MAGIC[8] = {'1', 'D', 'C', 'H', 'E', 'S', 'S', '\0'};
@@ -623,7 +675,7 @@ private:
         Header header{};
         std::memcpy(header.magic, MAGIC, sizeof(MAGIC));
         header.version = FORMAT_VERSION;
-        header.mode = (mode == Mode::Wdl) ? 0 : 1;
+        header.mode = (mode == Mode::Wdl) ? 0 : (mode == Mode::Dtm) ? 1 : 2;
         header.mirror = useMirror ? 1 : 0;
         std::fwrite(&header, sizeof(header), 1, file);
     }
@@ -736,14 +788,20 @@ public:
             std::fclose(file);
             return LoadResult::Incompatible;
         }
-        const Mode fileMode = (header.mode == 0) ? Mode::Wdl : Mode::Dtm;
+        const Mode fileMode =
+            (header.mode == 0) ? Mode::Wdl : (header.mode == 1) ? Mode::Dtm : Mode::Dtz;
         if (fileMode != mode || (header.mirror != 0) != useMirror)
         {
             std::fprintf(stderr,
                          "%s holds %s tables solved %s mirroring; this solver wants %s, %s\n",
-                         path.c_str(), header.mode == 0 ? "win/draw/loss" : "distance-to-mate",
+                         path.c_str(),
+                         header.mode == 0   ? "win/draw/loss"
+                         : header.mode == 1 ? "distance-to-mate"
+                                            : "fifty-move-rule",
                          header.mirror ? "with" : "without",
-                         mode == Mode::Wdl ? "win/draw/loss" : "distance-to-mate",
+                         mode == Mode::Wdl   ? "win/draw/loss"
+                         : mode == Mode::Dtm ? "distance-to-mate"
+                                             : "fifty-move-rule",
                          useMirror ? "with mirroring" : "without mirroring");
             std::fclose(file);
             return LoadResult::Incompatible;
@@ -775,7 +833,7 @@ public:
             }
 
             const unsigned long long positions = 2 * record.placements;
-            if (mode == Mode::Wdl)
+            if (mode != Mode::Dtm)
             {
                 entry.wdl.assign(positions);
                 if (entry.wdl.bytes() != record.payloadBytes ||
@@ -927,6 +985,10 @@ private:
         if (mode == Mode::Wdl)
         {
             transient = solveSliceWdl(entry, key, state, encodeFailures);
+        }
+        else if (mode == Mode::Dtz)
+        {
+            transient = solveSliceDtz(entry, key, state, encodeFailures);
         }
         else
         {
@@ -1156,6 +1218,216 @@ private:
                 entry.wdl.set(slot, PackedWdl::CODE_DRAW);
                 state[slot] = STATE_DRAW;
                 break;
+            }
+        }
+        return peak;
+    }
+
+    /*
+    Win/draw/loss WITH the fifty-move rule.
+
+    Same backward induction as the other two, but the value carried is the CLOCK BUDGET
+    the mover needs rather than a distance to mate, and it is capped at 100. A result that
+    would need more budget than that is unreachable before the rule declares a draw, so the
+    proposal is simply dropped and the position stays drawn.
+
+    Two things make this cheap. Budgets are bounded by 100, so ordering by budget is a
+    bucket queue rather than a heap — O(1) per operation, one word per entry, and each
+    bucket is freed as it is passed. And a move that leaves the slice resets the clock, so
+    its successor contributes only its outcome and none of its own budget: crossing a slice
+    boundary always costs exactly one ply, whatever happens on the far side.
+    */
+    uint64_t solveSliceDtz(SolvedSlice &entry,
+                           const SliceKey &key,
+                           std::vector<uint8_t> &state,
+                           unsigned long long &encodeFailures)
+    {
+        const unsigned long long n = entry.slice.size();
+        const unsigned long long slots = 2 * n;
+
+        // Bit 31 of a queue entry carries the sign, so the slot itself needs 31 bits.
+        if (slots > 0x7FFFFFFFull)
+        {
+            std::fprintf(stderr, "slice %s has %llu slots, too many for the bucket queue\n",
+                         describeSlice(key).c_str(), slots);
+            std::abort();
+        }
+
+        std::vector<int8_t> value(slots, DTZ_UNRESOLVED);
+        std::vector<uint8_t> counter(slots, 0);
+        std::vector<int8_t> lossValue(slots, DTZ_UNRESOLVED);
+        std::array<std::vector<uint32_t>, MAX_CLOCK_BUDGET + 1> buckets;
+
+        const auto propose = [&](unsigned long long slot, int proposed)
+        {
+            const int budget = clockBudget(proposed);
+            if (budget > clockLimit)
+            {
+                return; // the fifty-move rule arrives first; this stays a draw
+            }
+            buckets[budget].push_back(static_cast<uint32_t>(slot) |
+                                      (proposed > 0 ? 0x80000000u : 0u));
+        };
+
+        std::array<SuccessorTarget, 128> successors{};
+        unsigned char moves[MAX_MOVES];
+
+        // Pass 1: terminal positions, and everything a slice-leaving move settles outright.
+        for (unsigned long long index = 0; index < n; ++index)
+        {
+            const unsigned long long board = entry.slice.decode(index);
+            for (unsigned int side = 0; side < 2; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                const unsigned long long slot = 2 * index + side;
+
+                if (isInCheck(board, !whiteToMove))
+                {
+                    value[slot] = DTZ_ILLEGAL;
+                    continue;
+                }
+
+                const unsigned int count = generateMoves(board, whiteToMove, moves);
+                if (count == 0)
+                {
+                    if (isInCheck(board, whiteToMove))
+                    {
+                        propose(slot, -1); // mated where it stands; needs no budget at all
+                    }
+                    else
+                    {
+                        value[slot] = 0; // stalemate
+                    }
+                    continue;
+                }
+
+                counter[slot] = static_cast<uint8_t>(count);
+
+                for (unsigned int i = 0; i < count; ++i)
+                {
+                    const unsigned int start = moves[i] >> 4, end = moves[i] & 15u;
+                    const unsigned int moved = getNthNibble(board, start);
+                    const unsigned int captured = getNthNibble(board, end);
+                    if (!isPawn(moved) && isEmpty(captured))
+                    {
+                        continue; // stays in the slice; the backward pass handles it
+                    }
+
+                    const SuccessorTarget &target =
+                        resolveSuccessor(successors, key, moved, captured, end);
+                    const Value successor =
+                        successorValue(target, applyMoveToBoard(board, moves[i]), !whiteToMove);
+                    if (!isPlayable(successor))
+                    {
+                        ++encodeFailures;
+                        continue;
+                    }
+
+                    // The clock resets here, so the far side contributes its outcome and
+                    // nothing else: this move costs exactly one ply of budget.
+                    if (successor < 0)
+                    {
+                        propose(slot, 2); // they are lost, so we win with a budget of one
+                    }
+                    else if (successor > 0)
+                    {
+                        lossValue[slot] = std::min<int8_t>(lossValue[slot], -2);
+                        if (--counter[slot] == 0)
+                        {
+                            propose(slot, lossValue[slot]);
+                        }
+                    }
+                    // A drawn successor removes the chance of losing, so the counter
+                    // deliberately stays put: it can now never reach zero.
+                }
+            }
+        }
+
+        uint64_t peak = value.capacity() + counter.capacity() + lossValue.capacity();
+        for (const auto &bucket : buckets)
+        {
+            peak += bucket.capacity() * sizeof(uint32_t);
+        }
+
+        // Pass 2: backward induction inside the slice, in ascending budget. Every step
+        // adds a ply, so a bucket only ever feeds strictly later buckets and one pass over
+        // them in order is enough.
+        for (int budget = 0; budget <= clockLimit; ++budget)
+        {
+            for (std::size_t i = 0; i < buckets[budget].size(); ++i)
+            {
+                const uint32_t packed = buckets[budget][i];
+                const unsigned long long slot = packed & 0x7FFFFFFFu;
+                if (value[slot] != DTZ_UNRESOLVED)
+                {
+                    continue; // a smaller budget already claimed this position
+                }
+                const int committed = (packed & 0x80000000u) ? (budget + 1) : -(budget + 1);
+                value[slot] = static_cast<int8_t>(committed);
+
+                const bool whiteToMove = (slot % 2) == 0;
+                const unsigned long long board = entry.slice.decode(slot / 2);
+
+                forEachPredecessor(
+                    board, whiteToMove, entry.slice,
+                    [&](unsigned long long predecessorIndex)
+                    {
+                        const unsigned long long predecessorSlot =
+                            2 * predecessorIndex + (whiteToMove ? 1 : 0);
+                        if (value[predecessorSlot] != DTZ_UNRESOLVED)
+                        {
+                            return;
+                        }
+                        const int ours = -(committed + (committed > 0 ? 1 : -1));
+                        if (committed < 0)
+                        {
+                            propose(predecessorSlot, ours);
+                        }
+                        else
+                        {
+                            lossValue[predecessorSlot] =
+                                std::min<int8_t>(lossValue[predecessorSlot],
+                                                 static_cast<int8_t>(ours));
+                            if (counter[predecessorSlot] > 0 &&
+                                --counter[predecessorSlot] == 0)
+                            {
+                                propose(predecessorSlot, lossValue[predecessorSlot]);
+                            }
+                        }
+                    },
+                    encodeFailures);
+            }
+            // Nothing reads a bucket once it has been passed.
+            buckets[budget].clear();
+            buckets[budget].shrink_to_fit();
+        }
+
+        // Anything still unlabelled is a draw: either neither side can force a result, or
+        // the fifty-move rule arrives before the winner can.
+        entry.wdl.assign(slots);
+        state.assign(slots, STATE_UNRESOLVED);
+        for (unsigned long long slot = 0; slot < slots; ++slot)
+        {
+            const int8_t v = value[slot];
+            if (v == DTZ_ILLEGAL)
+            {
+                entry.wdl.set(slot, PackedWdl::CODE_ILLEGAL);
+                state[slot] = STATE_ILLEGAL;
+            }
+            else if (v == DTZ_UNRESOLVED || v == 0)
+            {
+                entry.wdl.set(slot, PackedWdl::CODE_DRAW);
+                state[slot] = STATE_DRAW;
+            }
+            else if (v > 0)
+            {
+                entry.wdl.set(slot, PackedWdl::CODE_WIN);
+                state[slot] = STATE_WIN;
+            }
+            else
+            {
+                entry.wdl.set(slot, PackedWdl::CODE_LOSS);
+                state[slot] = STATE_LOSS;
             }
         }
         return peak;

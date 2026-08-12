@@ -25,17 +25,18 @@ throws the win away.
 | --- | --- |
 | positions | 9,470,299,328 |
 | slices | 4,512 |
-| solve time | 44 min, single-threaded |
-| table | 2.20 GiB |
+| solve time | 44 min win/draw/loss, 49 min with the fifty-move rule |
+| table | 2.20 GiB either way |
 | white wins / black wins / draws | 1.75B / 1.81B / 0.56B |
 
 Every one of the 4,125,581,107 legal positions was re-derived from its own move list as a
 check: zero failures. See Correctness below.
 
-**This ignores the fifty-move rule**, as tablebases conventionally do. Draws by repetition
-are exact. Because that rule can only convert wins into draws, White's win holds under
-strict FIDE rules only if it can be forced without fifty quiet moves elapsing — which is
-open, and needs DTZ. See Known limitations.
+**The win survives the fifty-move rule.** The game was solved a second time carrying
+distance-to-zeroing, which enforces that rule exactly, and compared against the first
+solve position by position: **not one position in the game changes.** White wins, `P 5-6`
+is still the only winning first move. Draws by repetition are exact in both. See
+Correctness.
 
 ## Building
 
@@ -130,13 +131,65 @@ constraint any more.
 ./src/cpp/compiled/retro count                 # size every slice
 ./src/cpp/compiled/retro verify [games]        # check the invariants and the index
 ./src/cpp/compiled/retro plan [pieces]         # what a run will cost, before spending it
-./src/cpp/compiled/retro solve [pieces] [wdl|dtm] [nomirror] [loud] [nocheck] [out=FILE]
+./src/cpp/compiled/retro solve [pieces] [wdl|dtm|dtz] [nomirror] [loud] [nocheck] [out=FILE]
 ./src/cpp/compiled/retro mirrorcheck [pieces]  # solve the same material three ways and compare
 ./src/cpp/compiled/retro probe "<fence>" [pieces] [in=FILE]
+./src/cpp/compiled/retro play in=FILE ["<fence>"]   # interactive board over the tables
 
 ./src/cpp/compiled/main [depth] [fence]        # alpha-beta search
 ./src/cpp/compiled/explore [plies]             # breadth-first position counts
 ```
+
+### Playing against the solution
+
+```
+retro play in=tb12-dtz.bin
+```
+
+opens an interactive board. It lists every legal move with the table's verdict on it,
+takes moves back, plays either side for you, and enforces repetition and the fifty-move
+rule the way the real rules do.
+
+```
+     0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
+  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+  | K | Q | R | B | N | P | . | . | . | . | p | n | b | r | q | k |
+  +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+
+KQRBNP....pnbrqk w 0 1
+  white to move — win
+
+  move           table says
+  ------------------------------------------------------
+  P 5-6          win                      <- best
+  P 5-7          draw
+  N 4-7          loss in 12
+  N 4-6          loss in 10
+```
+
+Two things make this work on a 2.20 GiB table.
+
+**The file is mapped, not loaded.** `Solver::load` copies every slice onto the heap and
+rebuilds every combinatorial index first, which is right for a verification pass that
+visits everything and wrong for a session that visits almost nothing. `TableReader` walks
+the record headers at startup — seeking over the payloads rather than reading them — so
+the whole game opens in 0.08 s of CPU and a probe faults in only the pages it reads.
+Slice indexes are built on first touch and kept; a whole game touches a few dozen.
+
+**Distances are reconstructed, not stored.** A win/draw/loss table says which moves win
+but not which wins fastest, so picking any winning move can shuffle indefinitely without
+approaching mate — that is exactly the weakness `retro line` has. Instead the table is
+used as a perfect oracle *inside* a small search: the winner only ever considers moves the
+table already calls winning, and the defender is allowed everything. Every non-winning
+branch dies at depth one, so the tree stays tiny — the search measures the length of a
+line whose existence is already proven rather than looking for it. That gives exact
+distance to mate on demand, out to 24 plies, from a table that stores none. Beyond that
+horizon it says "in more than 24" rather than guessing.
+
+Move ranking follows from that, and the asymmetry matters: the verdict always comes first,
+and only moves that tie on it are separated by length — shortest mate when winning,
+longest resistance when defending. For a defender an unresolved distance is the *best*
+news available, since it means the win takes longer than the whole horizon.
 
 ### Running the whole game
 
@@ -197,6 +250,23 @@ Nothing here is trusted without a check that could fail. All of these pass:
 
 - **Every legal position in the game** — 4,125,581,107 of them — re-derived from its own
   move list and compared against the stored value: **0 failures** (50 min).
+- **The whole game solved a second time under the fifty-move rule**, by a separately
+  written distance-to-zeroing pass, then compared against the plies-unlimited solve
+  position by position: **7,851,385,458 comparisons, 100.0000% unchanged, zero wins turned
+  into draws, zero impossible transitions.** All four totals match exactly and the start
+  position keeps the same verdict and the same unique winning move. (Every legal position
+  is compared, most of them twice — once from its own slice and once from its mirror.)
+- `retro readercheck` compares the memory-mapped reader against the solver's own loader
+  over every position in a table. They share no code below the slice index — the loader
+  copies payloads to the heap and reads them through `PackedWdl`, the reader decodes the
+  same two bits in place — so agreement means something. 77,308,570 positions at 6 pieces:
+  **0 mismatches**.
+- `retro distcheck` compares the distances the interactive board reconstructs against the
+  distance-to-mate solver, which computes the same quantity by backward induction over a
+  whole slice rather than forward search from one position. Every distance inside the
+  horizon must match exactly, and every one beyond it must be reported as unknown rather
+  than guessed. Over 3,000,000 decided positions: 2,991,680 exact, 8,320 correctly
+  reported as beyond the horizon, **0 wrong**.
 - 965,036,180 positions compared across three independent solves at 7 pieces — mirrored,
   unmirrored, and the separately written distance-to-mate solver — plus every position
   against its own reflection: **0 mismatches** in all three comparisons.
@@ -227,21 +297,18 @@ solver is right. `retro solve` says so rather than printing a reassuring tick, a
 
 ## Known limitations
 
-- The retrograde solver ignores the fifty-move rule, as tablebases conventionally do.
-  Draws by repetition are exact. The fifty-move rule can only turn some of these wins into
-  draws; capturing it needs distance-to-zeroing-move (DTZ) rather than distance-to-mate.
-
-  The clock does not have to be carried in the state to do this. A slice can only be
-  entered by a zeroing move, so the clock is zero on entry and counts plies since — which
-  makes the fifty-move rule a depth bound of 100 on the backward pass inside each slice
-  rather than a hundredfold blowup of the state space. Storage is one byte per position,
-  about 8.8 GiB mirrored. The compute is the expensive part: the bounded game has to be
-  resolved layer by layer up to 100 plies deep, so it is many times the cost of the
-  win/draw/loss pass, not a comparable one.
 - `retro line` walks a winning line, but win/draw/loss carries no distance, so the losing
   side there picks arbitrarily among moves that all lose rather than resisting as long as
-  possible. The line is a real win; its length is not the distance to mate, and its
-  halfmove clock is not what optimal defence would produce.
+  possible. The line is a real win; its length is not the distance to mate. `retro play`
+  does not have this problem — it reconstructs distances on demand — so prefer it for
+  walking a line.
+- The distance the interactive board reports is exact out to 24 plies and honest beyond
+  it ("in more than 24"). Raising the horizon costs a pause on every position whose mate
+  is further away than that, which from the opening is all of them.
+- Reconstructing a distance from a DTZ table measures plies to mate without re-checking
+  the clock along the way. That is sound for the short mates it can resolve — 24 plies
+  cannot exhaust a 100-ply clock — but it is not a distance-to-zeroing figure, and it
+  should not be read as one.
 - `PackedWdl::set` is a read-modify-write on a shared 64-bit word, so parallelising the
   solve needs the write side partitioned by word.
 - A mate reported by the search is always a real mate, but its *distance* is only minimal

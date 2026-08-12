@@ -1,6 +1,7 @@
 #include "evaluate.h"
 #include "retro/slice.h"
 #include "retro/solver.h"
+#include "retro/play.h"
 
 #include <chrono>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <algorithm>
 #include <random>
+#include <unordered_map>
 
 /*
 Driver for the retrograde side of the project.
@@ -16,6 +18,7 @@ Driver for the retrograde side of the project.
   retro verify [games]   check the invariants the index is built on, and the index itself
   retro solve [pieces]   solve every slice up to a piece count, then self-check it
   retro probe "<fence>"  look a position up in the solved tables
+  retro play             an interactive board over the solved tables
 
 `count` is the one to run first. Everything else is only worth building if the numbers
 it prints are the numbers we think they are.
@@ -501,7 +504,9 @@ at minute seventy that the largest slice does not fit.
 static void printPlan(const SolvePlan &plan, Mode mode, bool mirror, double ratePerSecond)
 {
     std::printf("plan: %llu slices, %.3fB positions  [%s%s]\n", plan.slices, plan.positions / 1e9,
-                mode == Mode::Wdl ? "win/draw/loss, 2 bits" : "distance to mate, 2 bytes",
+                mode == Mode::Wdl   ? "win/draw/loss, 2 bits"
+                : mode == Mode::Dtz ? "win/draw/loss WITH the fifty-move rule, 2 bits"
+                                    : "distance to mate, 2 bytes",
                 mirror ? ", mirror symmetry" : ", no mirror");
     std::printf("  tables                 %s resident for the whole run\n",
                 formatBytes(plan.tableBytes).c_str());
@@ -721,6 +726,241 @@ static int commandMirrorCheck(unsigned int maxPieces)
 }
 
 /* ------------------------------------------------------------------------------------
+   dtzcheck
+   ------------------------------------------------------------------------------------ */
+
+/*
+Independent check on the fifty-move solver: play the game out with the clock carried
+explicitly in the state, which is the plain definition the slice machinery is supposed to
+be a clever encoding of. Memoised on (board, side to move, clock).
+
+If the reasoning the fast path rests on — a slice can only be entered by a zeroing move,
+so the clock is zero on entry and the rule becomes a depth bound inside the slice — is
+wrong anywhere, these two disagree.
+*/
+struct ClockKey
+{
+    unsigned long long board;
+    unsigned int packed; // side to move and clock
+
+    bool operator==(const ClockKey &o) const { return board == o.board && packed == o.packed; }
+};
+struct ClockKeyHash
+{
+    std::size_t operator()(const ClockKey &k) const
+    {
+        return static_cast<std::size_t>(tt::mix64(k.board ^ (0x9E3779B97F4A7C15ull * k.packed)));
+    }
+};
+
+static int bruteForceFifty(unsigned long long board,
+                           bool whiteToMove,
+                           unsigned int clock,
+                           unsigned int clockLimit,
+                           std::unordered_map<ClockKey, int, ClockKeyHash> &memo)
+{
+    unsigned char moves[MAX_MOVES];
+    const unsigned int count = generateMoves(board, whiteToMove, moves);
+    if (count == 0)
+    {
+        return isInCheck(board, whiteToMove) ? -1 : 0; // mated, or stalemate
+    }
+    if (clock >= clockLimit)
+    {
+        return 0; // fifty-move rule
+    }
+
+    const ClockKey key{board, (clock << 1) | (whiteToMove ? 1u : 0u)};
+    const auto it = memo.find(key);
+    if (it != memo.end())
+    {
+        return it->second;
+    }
+    // Well founded without any depth limit: a quiet move raises the clock and anything
+    // else drops material or advances a pawn, so no state can recur.
+    memo.emplace(key, 0);
+
+    int best = -1;
+    for (unsigned int i = 0; i < count; ++i)
+    {
+        const unsigned int start = moves[i] >> 4, end = moves[i] & 15u;
+        const bool zeroes =
+            isPawn(getNthNibble(board, start)) || !isEmpty(getNthNibble(board, end));
+        const int reply = bruteForceFifty(applyMoveToBoard(board, moves[i]), !whiteToMove,
+                                          zeroes ? 0u : clock + 1, clockLimit, memo);
+        best = std::max(best, -reply);
+        if (best == 1)
+        {
+            break;
+        }
+    }
+    memo[key] = best;
+    return best;
+}
+
+static int commandDtzCheck(unsigned int maxPieces, int samples, int clockLimit)
+{
+    std::printf("solving up to %u pieces with a clock limit of %d plies\n", maxPieces,
+                clockLimit);
+    std::fflush(stdout);
+    Solver fifty(Mode::Dtz, true);
+    fifty.setClockLimit(clockLimit);
+    fifty.solve(maxPieces, false);
+
+    std::printf("solving the same material without it\n");
+    std::fflush(stdout);
+    Solver plain(Mode::Wdl, true);
+    plain.solve(maxPieces, false);
+
+    // The rule can only ever turn a win into a draw: never create a win, never flip a win
+    // into a loss, never disturb something already drawn. Checked over every position.
+    unsigned long long compared = 0, violations = 0, weakened = 0;
+    Slice slice;
+    for (const SliceKey &key : allSliceKeys())
+    {
+        if (key.pieceCount() > maxPieces || !slice.build(key))
+        {
+            continue;
+        }
+        for (unsigned long long index = 0; index < slice.size(); ++index)
+        {
+            const unsigned long long board = slice.decode(index);
+            for (unsigned int side = 0; side < 2; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                const Value a = plain.lookup(board, whiteToMove);
+                if (a == VALUE_ILLEGAL)
+                {
+                    continue;
+                }
+                const Value b = fifty.lookup(board, whiteToMove);
+                ++compared;
+                if (b != a && b != VALUE_DRAW)
+                {
+                    if (violations < 5)
+                    {
+                        std::printf("  IMPOSSIBLE %s: without rule %s, with rule %s\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    describeValue(a, false).c_str(),
+                                    describeValue(b, false).c_str());
+                    }
+                    ++violations;
+                }
+                else if (b != a)
+                {
+                    ++weakened;
+                }
+            }
+        }
+    }
+    std::printf("  %llu positions: %llu weakened to draws, %llu impossible transitions\n",
+                compared, weakened, violations);
+    std::fflush(stdout);
+
+    std::mt19937_64 rng(4242);
+    std::vector<SliceKey> candidates;
+    for (const SliceKey &key : allSliceKeys())
+    {
+        if (key.pieceCount() <= maxPieces && slice.build(key) && slice.size())
+        {
+            candidates.push_back(key);
+        }
+    }
+
+    unsigned long long checked = 0, mismatches = 0;
+    for (int sample = 0; sample < samples && !candidates.empty(); ++sample)
+    {
+        const SliceKey &key = candidates[rng() % candidates.size()];
+        if (!slice.build(key))
+        {
+            continue;
+        }
+        const unsigned long long index = rng() % slice.size();
+        const bool whiteToMove = (rng() & 1) != 0;
+        const unsigned long long board = slice.decode(index);
+        if (isInCheck(board, !whiteToMove))
+        {
+            continue;
+        }
+
+        std::unordered_map<ClockKey, int, ClockKeyHash> memo;
+        const int brute =
+            bruteForceFifty(board, whiteToMove, 0, static_cast<unsigned int>(clockLimit), memo);
+        const Value stored = fifty.lookup(board, whiteToMove);
+        const int table = (stored > 0) ? 1 : (stored < 0) ? -1 : 0;
+        ++checked;
+
+        if (brute != table)
+        {
+            if (mismatches < 10)
+            {
+                std::printf("  MISMATCH %s: brute force %s, table %s\n",
+                            varsToFence(board, whiteToMove, 0, 1).c_str(),
+                            brute > 0 ? "win" : brute < 0 ? "loss" : "draw",
+                            describeValue(stored, false).c_str());
+            }
+            ++mismatches;
+        }
+    }
+    std::printf("  %llu positions replayed with the clock in the state, %llu mismatches\n",
+                checked, mismatches);
+
+    const bool ok = (violations == 0 && mismatches == 0);
+    std::printf("\n%s\n", ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------------------
+   compare
+   ------------------------------------------------------------------------------------ */
+
+static int commandCompare(const string &pathA, const string &pathB)
+{
+    Solver a(Mode::Wdl, true), b(Mode::Dtz, true);
+    if (!a.load(pathA) || !b.load(pathB))
+    {
+        std::fprintf(stderr, "could not load both tables\n");
+        return 2;
+    }
+
+    unsigned long long compared = 0, same = 0, weakened = 0, impossible = 0;
+    Slice slice;
+    for (const SliceKey &key : allSliceKeys())
+    {
+        if (!slice.build(key))
+        {
+            continue;
+        }
+        for (unsigned long long index = 0; index < slice.size(); ++index)
+        {
+            const unsigned long long board = slice.decode(index);
+            for (unsigned int side = 0; side < 2; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                const Value x = a.lookup(board, whiteToMove);
+                if (x == VALUE_ILLEGAL)
+                {
+                    continue;
+                }
+                const Value y = b.lookup(board, whiteToMove);
+                ++compared;
+                if (x == y) { ++same; }
+                else if (y == VALUE_DRAW) { ++weakened; }
+                else { ++impossible; }
+            }
+        }
+    }
+    std::printf("%llu legal positions compared\n", compared);
+    std::printf("  unchanged by the fifty-move rule   %llu (%.4f%%)\n", same,
+                100.0 * same / compared);
+    std::printf("  wins turned into draws by it       %llu (%.4f%%)\n", weakened,
+                100.0 * weakened / compared);
+    std::printf("  impossible transitions             %llu%s\n", impossible,
+                impossible ? "   <-- BUG" : "");
+    return impossible == 0 ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------------------
    line
    ------------------------------------------------------------------------------------ */
 
@@ -827,6 +1067,198 @@ static int commandLine(const string &fence, unsigned int maxPieces, Mode mode,
 }
 
 /* ------------------------------------------------------------------------------------
+   readercheck
+   ------------------------------------------------------------------------------------ */
+
+/*
+The memory-mapped reader and the solver's own loader must agree on every position in a
+table, or the interactive board is showing something the solve never said.
+
+They share no code below the slice index: the loader copies payloads onto the heap and
+reads them through PackedWdl, while the reader leaves them in the mapping and decodes the
+same two bits by hand. Comparing them over a whole file is what makes the second path
+trustworthy.
+*/
+static int commandReaderCheck(const string &tablePath, Mode mode)
+{
+    if (tablePath.empty())
+    {
+        std::fprintf(stderr, "readercheck needs a table: retro readercheck in=FILE\n");
+        return 2;
+    }
+
+    TableReader reader;
+    if (!reader.open(tablePath))
+    {
+        return 1;
+    }
+
+    Solver solver(mode, reader.mirrored());
+    if (!solver.load(tablePath))
+    {
+        std::fprintf(stderr, "the solver could not load %s\n", tablePath.c_str());
+        return 1;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    unsigned long long compared = 0, mismatches = 0, missing = 0;
+
+    for (const SliceKey &key : allSliceKeys())
+    {
+        const SolvedSlice *entry = solver.find(key);
+        if (!entry)
+        {
+            continue;
+        }
+        for (unsigned long long index = 0; index < entry->slice.size(); ++index)
+        {
+            const unsigned long long board = entry->slice.decode(index);
+            for (int side = 0; side < 2; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                bool found = false;
+                const Value fromReader = reader.lookup(board, whiteToMove, &found);
+                const Value fromSolver = solver.lookup(board, whiteToMove);
+                ++compared;
+                if (!found)
+                {
+                    ++missing;
+                }
+                else if (fromReader != fromSolver)
+                {
+                    if (mismatches < 5)
+                    {
+                        std::printf("  %s  reader %s, solver %s\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    describeValue(fromReader, mode == Mode::Dtm).c_str(),
+                                    describeValue(fromSolver, mode == Mode::Dtm).c_str());
+                    }
+                    ++mismatches;
+                }
+            }
+        }
+    }
+
+    std::printf("%llu positions compared, %llu mismatches, %llu not found by the reader\n",
+                compared, mismatches, missing);
+    std::printf("  %.1fs\n", seconds(started));
+    std::printf("%s\n", (mismatches == 0 && missing == 0) ? "PASS" : "FAIL");
+    return (mismatches == 0 && missing == 0) ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------------------
+   distcheck
+   ------------------------------------------------------------------------------------ */
+
+/*
+The interactive board reconstructs distance to mate from a table that does not store it,
+by searching with the win/draw/loss table as a perfect oracle. That claim is only worth
+making if the distances it produces are the real ones.
+
+This checks them against the distance-to-mate solver, which computes the same quantity by
+an entirely different route — backward induction with a priority queue over the whole
+slice, rather than a forward search from one position. Every position whose true distance
+is inside the search horizon must come back exactly equal; a position beyond the horizon
+must report that it does not know, and must never report a number.
+*/
+static int commandDistCheck(const string &wdlPath, const string &dtmPath, unsigned long long limit)
+{
+    TableReader wdl;
+    if (!wdl.open(wdlPath))
+    {
+        return 1;
+    }
+    if (wdl.mode() == Mode::Dtm)
+    {
+        std::fprintf(stderr, "%s is a distance-to-mate table; give the win/draw/loss one first\n",
+                     wdlPath.c_str());
+        return 2;
+    }
+
+    Solver truth(Mode::Dtm, true);
+    if (!truth.load(dtmPath))
+    {
+        std::fprintf(stderr, "could not load %s as a distance-to-mate table\n", dtmPath.c_str());
+        return 1;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    unsigned long long checked = 0, agreed = 0, wrong = 0, beyondHorizon = 0, invented = 0;
+    int deepestAgreed = 0;
+
+    for (const SliceKey &key : allSliceKeys())
+    {
+        const SolvedSlice *entry = truth.find(key);
+        if (!entry || checked >= limit)
+        {
+            continue;
+        }
+        for (unsigned long long index = 0; index < entry->slice.size() && checked < limit; ++index)
+        {
+            const unsigned long long board = entry->slice.decode(index);
+            for (int side = 0; side < 2 && checked < limit; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                const Value exact = truth.lookup(board, whiteToMove);
+                if (exact == VALUE_DRAW || exact == VALUE_ILLEGAL || exact == VALUE_UNRESOLVED)
+                {
+                    continue;
+                }
+
+                ++checked;
+                const int trueDistance = distanceToMate(exact);
+
+                DistanceSearch search(wdl);
+                const int reported = search.distance(board, whiteToMove, MATE_SEARCH_PLIES);
+
+                if (reported < 0)
+                {
+                    // Only acceptable if the true distance really was out of reach.
+                    if (trueDistance <= 6)
+                    {
+                        if (wrong < 5)
+                        {
+                            std::printf("  %s  true %d, search gave up\n",
+                                        varsToFence(board, whiteToMove, 0, 1).c_str(), trueDistance);
+                        }
+                        ++wrong;
+                    }
+                    else
+                    {
+                        ++beyondHorizon;
+                    }
+                }
+                else if (reported != trueDistance)
+                {
+                    if (wrong < 5)
+                    {
+                        std::printf("  %s  true %d, search said %d\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    trueDistance, reported);
+                    }
+                    ++wrong;
+                    ++invented;
+                }
+                else
+                {
+                    ++agreed;
+                    deepestAgreed = std::max(deepestAgreed, trueDistance);
+                }
+            }
+        }
+    }
+
+    std::printf("%llu decided positions checked against the distance-to-mate solver\n", checked);
+    std::printf("  %llu exact matches (deepest %d plies)\n", agreed, deepestAgreed);
+    std::printf("  %llu beyond the %d-ply search horizon, reported as unknown\n",
+                beyondHorizon, MATE_SEARCH_PLIES);
+    std::printf("  %llu wrong (%llu of them a number that disagrees)\n", wrong, invented);
+    std::printf("  %.1fs\n", seconds(started));
+    std::printf("%s\n", wrong == 0 ? "PASS" : "FAIL");
+    return wrong == 0 ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------------------
    probe
    ------------------------------------------------------------------------------------ */
 
@@ -886,6 +1318,7 @@ int main(int argc, char **argv)
         const string argument = argv[i];
         if ((command == "probe" || command == "line") && i == 2) continue; // the position
         if (argument == "dtm") mode = Mode::Dtm;
+        else if (argument == "dtz") mode = Mode::Dtz;
         else if (argument == "wdl") mode = Mode::Wdl;
         else if (argument == "nomirror") mirror = false;
         else if (argument == "quiet") verbose = false;
@@ -916,6 +1349,29 @@ int main(int argc, char **argv)
     {
         return commandSolve(pieces, mode, mirror, verbose, runChecks, tablePath);
     }
+    if (command == "dtzcheck")
+    {
+    {
+        int clockLimit = MAX_CLOCK_BUDGET;
+        for (int i = 3; i < argc; ++i)
+        {
+            if (string(argv[i]).rfind("clock=", 0) == 0)
+            {
+                clockLimit = std::atoi(argv[i] + 6);
+            }
+        }
+        return commandDtzCheck(piecesGiven ? pieces : 5, 200, clockLimit);
+    }
+    }
+    if (command == "compare")
+    {
+        if (argc < 4)
+        {
+            std::fprintf(stderr, "compare needs two table files: <wdl> <dtz>\n");
+            return 2;
+        }
+        return commandCompare(argv[2], argv[3]);
+    }
     if (command == "mirrorcheck")
     {
         return commandMirrorCheck(pieces);
@@ -938,6 +1394,40 @@ int main(int argc, char **argv)
         }
         return commandProbe(argv[2], pieces, mode, tablePath);
     }
+    if (command == "distcheck")
+    {
+        if (argc < 4)
+        {
+            std::fprintf(stderr, "distcheck needs two table files: <wdl> <dtm>\n");
+            return 2;
+        }
+        return commandDistCheck(argv[2], argv[3], piecesGiven ? pieces : 200000);
+    }
+    if (command == "readercheck")
+    {
+        return commandReaderCheck(tablePath, mode);
+    }
+    if (command == "play")
+    {
+        if (tablePath.empty())
+        {
+            std::fprintf(stderr,
+                         "play needs a solved table: retro play in=tb12.bin [\"<fence>\"]\n");
+            return 2;
+        }
+        // A quoted position may follow the command; flags are matched by prefix, not position.
+        string startFence;
+        for (int i = 2; i < argc; ++i)
+        {
+            const string argument = argv[i];
+            if (argument.find(' ') != string::npos)
+            {
+                startFence = argument;
+                break;
+            }
+        }
+        return commandPlay(tablePath, startFence);
+    }
 
     std::fprintf(stderr,
                  "usage: retro count\n"
@@ -945,8 +1435,12 @@ int main(int argc, char **argv)
                  "       retro plan [pieces] [wdl|dtm] [nomirror]\n"
                  "       retro solve [pieces] [wdl|dtm] [nomirror] [loud] [nocheck] [out=FILE]\n"
                  "       retro mirrorcheck [pieces]\n"
+                 "       retro dtzcheck [pieces] [clock=N]\n"
+                 "       retro compare <wdl-table> <dtz-table>\n"
                  "       retro probe \"<fence>\" [pieces] [wdl|dtm] [in=FILE]\n"
                  "       retro line \"<fence>\" [in=FILE]\n"
+                 "       retro play in=FILE [\"<fence>\"]\n"
+                 "       retro readercheck in=FILE [dtm]\n"
                  "\n"
                  "solve writes each slice to out=FILE as it finishes, so a run that dies can be\n"
                  "resumed by repeating the same command. probe reads in=FILE instead of solving.\n");

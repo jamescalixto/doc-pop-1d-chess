@@ -45,6 +45,11 @@ check: $(BUILD_DIR)/retro
 run: $(BUILD_DIR)/main
 	./$(BUILD_DIR)/main
 
+# Interactive board over a solved table. Pass TABLE=... to use a different one.
+TABLE ?= tb12-dtz.bin
+play: $(BUILD_DIR)/retro
+	./$(BUILD_DIR)/retro play in=$(TABLE)
+
 count: $(BUILD_DIR)/retro
 	./$(BUILD_DIR)/retro count
 
@@ -57,4 +62,4 @@ mirrorcheck: $(BUILD_DIR)/retro
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all tests check run count solve mirrorcheck clean
+.PHONY: all tests check run play count solve mirrorcheck clean
