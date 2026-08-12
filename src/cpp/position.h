@@ -1,18 +1,19 @@
-#include "constants.h"
+#pragma once
+
+#include "attacks.h"
+
+#include <array>
+#include <bit>
 #include <bitset>
-#include <fstream>
+#include <cstdint>
 #include <iostream>
-#include <unordered_map>
-#include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
 
-using std::set;
 using std::string;
 using std::tuple, std::make_tuple, std::tie;
-using std::unordered_map;
 using std::vector;
 
 /*
@@ -82,6 +83,9 @@ Halfmove and fullmove are unsigned ints that have the same meaning as in FENCE.
 
 Moves are expressed as a byte of XXXXYYYY, where the XXXX nibble indicates the starting
 space and the YYYY nibble indicates the ending space.
+
+Square sets (occupancy, attack sets, ...) are 16-bit masks in which square s is bit
+(15 - s); see attacks.h for the rationale.
 */
 
 // Handy constants.
@@ -91,24 +95,21 @@ const unsigned long long START_BOARD = 3991632928627678971;
 const unsigned long long FIRST_NIBBLE_BITMASK = 240; // bitmask to get first nibble (of a byte).
 const unsigned long long LAST_NIBBLE_BITMASK = 15;   // bitmask to get last nibble.
 
-// Import saved lookup tables for sliding rook-like and bishop-like attacks.
-// This needs to be called in main() to initialize the variables.
-vector<unsigned int>
-    attackLookup(10485729);
-void importLookupTables(vector<unsigned int> &attackLookup)
-{
-    std::ifstream file("mapping.txt");
-    string line;
-    unsigned long long occupancy;
-    unsigned int moveset;
-    while (std::getline(file, line))
-    {
-        std::stringstream ss;
-        ss << line;
-        ss >> occupancy >> moveset;
-        attackLookup[occupancy] = moveset;
-    }
-}
+// Returned by square-finding helpers when there is nothing to find.
+const unsigned int NO_SQUARE = BOARD_SIZE;
+
+// Piece nibbles. OR in COLOUR_BLACK to get the black equivalent.
+const unsigned int PIECE_PAWN = 1, PIECE_KNIGHT = 2, PIECE_KING = 3;
+const unsigned int PIECE_BISHOP = 5, PIECE_ROOK = 6, PIECE_QUEEN = 7;
+const unsigned int COLOUR_BLACK = 8;
+
+// Pawn starting squares, and the two squares each pawn leaps over on its double move.
+const unsigned int WHITE_PAWN_START = 5, BLACK_PAWN_START = 10;
+const unsigned int WHITE_PAWN_LEAP_PATH = attacks::squareBit(6) | attacks::squareBit(7);
+const unsigned int BLACK_PAWN_LEAP_PATH = attacks::squareBit(9) | attacks::squareBit(8);
+
+// No position has more legal moves than this; see generateMoves for the bound.
+const unsigned int MAX_MOVES = 64;
 
 /*
 Because I can.
@@ -116,7 +117,6 @@ Because I can.
 void print(auto i)
 {
     std::cout << i << std::endl;
-    // std::cout << "(" << (i >> 4) << "," << (i & 15) << ")" << std::endl;
 }
 void printMove(unsigned int m)
 {
@@ -141,44 +141,24 @@ void debugPrint(unsigned long long i)
 /*
 Helper function to check valid index.
 */
-bool indexValid(unsigned int i)
+inline bool indexValid(unsigned int i)
 {
-    return 0 <= i && i < BOARD_SIZE;
+    return i < BOARD_SIZE;
 }
 
 /*
 Helper function to grab the last nibble of an unsigned int.
 */
-unsigned int getLastNibble(unsigned int i)
+inline unsigned int getLastNibble(unsigned int i)
 {
     return i & LAST_NIBBLE_BITMASK;
-}
-
-/*
-Helper function to find a nibble n in i and return the index of it, assuming the given
-number is BOARD_SIZE bits long. Returns -1 if the nibble is not found.
-*/
-unsigned int findNibble(unsigned long long num, unsigned long long nibble)
-{
-    for (unsigned int i = 0; i < BOARD_SIZE; i++)
-    {
-        if ((num & LAST_NIBBLE_BITMASK) == nibble)
-        {
-            return BOARD_SIZE - i - 1;
-        }
-        else
-        {
-            num = num >> 4;
-        }
-    }
-    return -1;
 }
 
 /*
 Helper function to extract the nth nibble of num, assuming the given number is
 BOARD_SIZE bits long.
 */
-unsigned long long getNthNibble(unsigned long long num, unsigned int n)
+inline unsigned long long getNthNibble(unsigned long long num, unsigned int n)
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
     return ((num >> bitshifts) & LAST_NIBBLE_BITMASK);
@@ -188,7 +168,7 @@ unsigned long long getNthNibble(unsigned long long num, unsigned int n)
 Helper function to blank the nth nibble of num, assuming the given number is BOARD_SIZE
 bits long.
 */
-unsigned long long blankNthNibble(unsigned long long num, unsigned int n)
+inline unsigned long long blankNthNibble(unsigned long long num, unsigned int n)
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1);                // number of bitshifts to do.
     unsigned long long blanker = ~(LAST_NIBBLE_BITMASK << bitshifts); // all 1s except for nth nibble.
@@ -199,11 +179,56 @@ unsigned long long blankNthNibble(unsigned long long num, unsigned int n)
 Helper function to insert a nibble as the nth nibble of num, assuming the given number
 is BOARD_SIZE bits long.
 */
-unsigned long long insertNthNibble(unsigned long long num, unsigned long long nibble, unsigned int n)
+inline unsigned long long insertNthNibble(unsigned long long num, unsigned long long nibble, unsigned int n)
 {
     unsigned int bitshifts = 4 * (BOARD_SIZE - n - 1); // number of bitshifts to do.
     unsigned long long inserter = nibble << bitshifts; // move nibble to correct spot.
     return (blankNthNibble(num, n) | inserter);
+}
+
+/*
+Collapse a word that has at most the low bit of each nibble set into a 16-bit square
+set. Nibble k of the word becomes bit k of the result, which is square (15 - k) — the
+same orientation every other mask in the engine uses.
+*/
+inline unsigned int compactNibbleFlags(unsigned long long x)
+{
+    x = (x | (x >> 3)) & 0x0303030303030303ULL;
+    x = (x | (x >> 6)) & 0x000F000F000F000FULL;
+    x = (x | (x >> 12)) & 0x000000FF000000FFULL;
+    x = (x | (x >> 24)) & 0xFFFFULL;
+    return static_cast<unsigned int>(x);
+}
+
+/*
+Square set of every square holding the given piece nibble. Branch-free: XOR makes the
+matching nibbles zero, then the OR-reduce marks which nibbles were zero.
+*/
+inline unsigned int getPieceSquares(unsigned long long board, unsigned int piece)
+{
+    const unsigned long long spread = 0x1111111111111111ULL * piece;
+    const unsigned long long diff = board ^ spread;
+    const unsigned long long nonzero = diff | (diff >> 1) | (diff >> 2) | (diff >> 3);
+    return compactNibbleFlags(~nonzero & 0x1111111111111111ULL);
+}
+
+/*
+Helper function to find a nibble n in i and return the index of it, assuming the given
+number is BOARD_SIZE bits long. Returns NO_SQUARE if the nibble is not found.
+*/
+inline unsigned int findNibble(unsigned long long num, unsigned long long nibble)
+{
+    const unsigned int squares = getPieceSquares(num, static_cast<unsigned int>(nibble));
+    return squares ? attacks::lowestSquare(squares) : NO_SQUARE;
+}
+
+/*
+Square the given player's king stands on. Every legal position has both kings, so this
+returning NO_SQUARE means the caller built an impossible board.
+*/
+inline unsigned int findKing(unsigned long long board, bool player)
+{
+    return findNibble(board, player ? PIECE_KING : (PIECE_KING | COLOUR_BLACK));
 }
 
 /*
@@ -336,35 +361,35 @@ bool isInsufficientMaterialPieceSet(unsigned int pieceSet)
 /*
 Helper functions to check pieces or piece properties.
 */
-bool isEmpty(unsigned int nibble)
+inline bool isEmpty(unsigned int nibble)
 {
     return nibble == 0;
 }
-bool isPieceOfPlayer(unsigned int nibble, bool player)
+inline bool isPieceOfPlayer(unsigned int nibble, bool player)
 {
     return !isEmpty(nibble) && ((nibble >> 3) != player);
 }
-bool isPawn(unsigned int nibble)
+inline bool isPawn(unsigned int nibble)
 {
     return nibble == 1 || nibble == 9;
 }
-bool isKnight(unsigned int nibble)
+inline bool isKnight(unsigned int nibble)
 {
     return nibble == 2 || nibble == 10;
 }
-bool isBishop(unsigned int nibble)
+inline bool isBishop(unsigned int nibble)
 {
     return nibble == 5 || nibble == 13;
 }
-bool isRook(unsigned int nibble)
+inline bool isRook(unsigned int nibble)
 {
     return nibble == 6 || nibble == 14;
 }
-bool isQueen(unsigned int nibble)
+inline bool isQueen(unsigned int nibble)
 {
     return nibble == 7 || nibble == 15;
 }
-bool isKing(unsigned int nibble)
+inline bool isKing(unsigned int nibble)
 {
     return nibble == 3 || nibble == 11;
 }
@@ -410,14 +435,7 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> fenceToVars(
     active = (activeChar == 'w');
 
     // Turn board string into unsigned long long.
-    board = 0; // clear the board, as we use bitwise operators instead of assignment.
-    string::iterator it;
-    for (it = boardString.begin(); it != boardString.end(); it++)
-    {
-        board = board << 4;                          // leftshift one nibble.
-        unsigned int pieceAsBits = pieceToBits(*it); // get numerical representation.
-        board |= pieceAsBits;                        // OR operator to add the new piece.
-    }
+    board = fenceToBoard(boardString);
 
     return make_tuple(board, active, halfmove, fullmove);
 }
@@ -434,7 +452,7 @@ string varsToFence(
 {
     // Turn unsigned long long into board string.
     string boardString = "";
-    for (int i = 0; i < BOARD_SIZE; i++)
+    for (unsigned int i = 0; i < BOARD_SIZE; i++)
     {
         unsigned int firstNibble = getNthNibble(board, i); // get last nibble.
         boardString += bitsToPiece(firstNibble);           // store char representation.
@@ -457,7 +475,7 @@ so if white had a queen and black had a rook, this would be 110000101000 = 3112.
 unsigned int getPieceSet(unsigned long long board)
 {
     unsigned int pieceSet = 0;
-    for (int i = 0; i < BOARD_SIZE; i++)
+    for (unsigned int i = 0; i < BOARD_SIZE; i++)
     {
         unsigned int lastNibble = getLastNibble(board); // get last nibble.
         pieceSet |= bitsToPieceSet(lastNibble);         // store pieceset representation.
@@ -469,70 +487,122 @@ unsigned int getPieceSet(unsigned long long board)
 /*
 Get (as a bitflag) occupancy as a 16-bit number.
 */
-unsigned int getOccupancy(unsigned long long board)
+inline unsigned int getOccupancy(unsigned long long board)
 {
-    unsigned int occupancy = 0;
-    for (unsigned int i = 0; i < BOARD_SIZE; i++) // check every square for pieces.
-    {
-        unsigned int lastNibble = getLastNibble(board); // get last nibble.
-        occupancy |= (!isEmpty(lastNibble) << i);       // fill with occupancy.
-        board = board >> 4;                             // move board over.
-    }
-    return occupancy;
+    const unsigned long long nonzero = board | (board >> 1) | (board >> 2) | (board >> 3);
+    return compactNibbleFlags(nonzero & 0x1111111111111111ULL);
+}
+
+/*
+Get (as a bitflag) occupancy for black. Bit 3 of a nibble is the colour bit and an empty
+square is all zeroes, so the colour bit alone identifies black pieces.
+*/
+inline unsigned int getBlackOccupancy(unsigned long long board)
+{
+    return compactNibbleFlags((board >> 3) & 0x1111111111111111ULL);
 }
 
 /*
 Get (as a bitflag) occupancy, for a given player, as a 16-bit number.
 */
-unsigned int getPlayerOccupancy(unsigned long long board, bool player)
+inline unsigned int getPlayerOccupancy(unsigned long long board, bool player)
 {
-    unsigned int occupancy = 0;
-    for (int i = 0; i < BOARD_SIZE; i++) // check every square for pieces.
-    {
-        unsigned int lastNibble = getLastNibble(board);          // get last nibble.
-        occupancy |= (isPieceOfPlayer(lastNibble, player) << i); // fill with occupancy.
-        board = board >> 4;                                      // move board over.
-    }
-    return occupancy;
+    const unsigned int black = getBlackOccupancy(board);
+    return player ? (getOccupancy(board) & ~black) : black;
 }
 
 /*
 Get (as a bitflag) squares attacked by the given player. Includes squares occupied by
 pieces belonging to both players. No piece attacks its own square.
 */
-unsigned int getAttackedSquares(unsigned long long board, bool player)
+inline unsigned int getAttackedSquares(unsigned long long board, bool player)
 {
-    unsigned int allAttackedSquares = 0;          // keep track of all attacked squares.
-    unsigned int occupancy = getOccupancy(board); // store occupancy.
-    for (int i = 0; i < BOARD_SIZE; i++)          // check every square for attacks.
+    const unsigned int occupancy = getOccupancy(board);
+    unsigned int attacked = 0;
+    for (unsigned int pieces = getPlayerOccupancy(board, player); pieces; pieces &= pieces - 1)
     {
-        unsigned int piece_nibble = getLastNibble(board); // get last nibble.
-        if (isPieceOfPlayer(piece_nibble, player))
-        {
-            if (piece_nibble > 9)
-            {                      // black, non-pawn piece.
-                piece_nibble %= 8; // get the white piece equivalent.
-            }
-            unsigned long long key = (piece_nibble << 20) | ((BOARD_SIZE - i - 1) << 16) | (occupancy);
-            unsigned int attackedSquares = attackLookup[key];
-            allAttackedSquares |= attackedSquares; // add attacked squares.
-        }
-        board = board >> 4;
+        const unsigned int square = attacks::lowestSquare(pieces);
+        attacked |= attacks::pieceAttacks(getNthNibble(board, square), square, occupancy);
     }
-    return allAttackedSquares;
+    return attacked;
+}
+
+/*
+Whether `square` is attacked by the given player.
+
+This asks the question from the target square outwards rather than generating every
+enemy attack set, which is what makes legality checking cheap: a knight or king attacks
+a square from exactly the squares it would attack (both movers are symmetric), a pawn
+has one possible origin, and along each sliding ray only the nearest blocker can be the
+attacker. That bounds the work at roughly a dozen O(1) nibble reads regardless of how
+crowded the board is.
+*/
+inline bool isSquareAttacked(
+    unsigned long long board,
+    unsigned int occupancy,
+    unsigned int square,
+    bool byPlayer)
+{
+    const unsigned int colour = byPlayer ? 0u : COLOUR_BLACK;
+
+    // Pawns. A white pawn attacks from the left, a black pawn from the right.
+    const unsigned int pawnOrigins = byPlayer ? attacks::WHITE_PAWN_ORIGINS[square]
+                                              : attacks::BLACK_PAWN_ORIGINS[square];
+    if (pawnOrigins && getNthNibble(board, attacks::lowestSquare(pawnOrigins)) == (PIECE_PAWN | colour))
+    {
+        return true;
+    }
+
+    // Knights and kings.
+    for (unsigned int set = attacks::KNIGHT_ATTACKS[square]; set; set &= set - 1)
+    {
+        if (getNthNibble(board, attacks::lowestSquare(set)) == (PIECE_KNIGHT | colour))
+        {
+            return true;
+        }
+    }
+    for (unsigned int set = attacks::KING_ATTACKS[square]; set; set &= set - 1)
+    {
+        if (getNthNibble(board, attacks::lowestSquare(set)) == (PIECE_KING | colour))
+        {
+            return true;
+        }
+    }
+
+    // Sliders. Intersecting a ray with the occupancy leaves only its blockers, which is
+    // at most one square per direction.
+    for (unsigned int set = attacks::rookAttacks(square, occupancy) & occupancy; set; set &= set - 1)
+    {
+        const unsigned int nibble = getNthNibble(board, attacks::lowestSquare(set));
+        if (nibble == (PIECE_ROOK | colour) || nibble == (PIECE_QUEEN | colour))
+        {
+            return true;
+        }
+    }
+    for (unsigned int set = attacks::bishopAttacks(square, occupancy) & occupancy; set; set &= set - 1)
+    {
+        const unsigned int nibble = getNthNibble(board, attacks::lowestSquare(set));
+        if (nibble == (PIECE_BISHOP | colour) || nibble == (PIECE_QUEEN | colour))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /*
 Return whether the given player is in check in the given board. Assumes that the
 position is valid.
 */
-bool isInCheck(unsigned long long board, bool player)
+inline bool isInCheck(unsigned long long board, bool player)
 {
-    unsigned int kingNibble = player ? 3 : 11;                               // nibble representing king to check for.
-    unsigned int kingPosition = findNibble(board, kingNibble);               // index of king.
-    unsigned int kingPositionBitflag = 1 << (BOARD_SIZE - kingPosition - 1); // get location as bitflag of index.
-    unsigned int attackedSquares = getAttackedSquares(board, !player);       // get squares that opponent is attacking.
-    return (kingPositionBitflag & attackedSquares);                          // return whether king is in those squares.
+    const unsigned int king = findKing(board, player);
+    if (king == NO_SQUARE)
+    {
+        return false;
+    }
+    return isSquareAttacked(board, getOccupancy(board), king, !player);
 }
 
 /*
@@ -540,7 +610,7 @@ Naively apply a move to the board; i.e., assume the position and move are both v
 legal. Used when other elements of the position do not matter; i.e. when testing check.
 Return the new board.
 */
-unsigned long long applyMoveToBoard(unsigned long long board, unsigned int move)
+inline unsigned long long applyMoveToBoard(unsigned long long board, unsigned int move)
 {
     // Get indices.
     unsigned int end_index = getLastNibble(move);
@@ -596,62 +666,66 @@ tuple<unsigned long long, bool, unsigned int, unsigned int> applyMove(
 }
 
 /*
-Get a vector of ints representing all legal moves by the given player.
+Write every legal move for `player` into `moves` and return how many there were.
+
+The caller supplies the buffer, so a search can keep one array per ply and never
+allocate. MAX_MOVES is comfortably above the real ceiling: a queen reaches at most 15
+squares, a rook 15, a bishop 7, a knight 4, the king 2 and the pawn 2, for 45.
+*/
+inline unsigned int generateMoves(unsigned long long board, bool player, unsigned char *moves)
+{
+    const unsigned int occupancy = getOccupancy(board);
+    const unsigned int black = getBlackOccupancy(board);
+    const unsigned int ownOccupancy = player ? (occupancy & ~black) : black;
+    const unsigned int kingSquare = findKing(board, player);
+
+    unsigned int count = 0;
+    for (unsigned int pieces = ownOccupancy; pieces; pieces &= pieces - 1)
+    {
+        const unsigned int start = attacks::lowestSquare(pieces);
+        const unsigned int piece = getNthNibble(board, start);
+        unsigned int targets = attacks::pieceAttacks(piece, start, occupancy) & ~ownOccupancy;
+
+        // The pawn's double first move. Both squares ahead must be empty, which also
+        // enforces that the double move can never capture.
+        if (piece == PIECE_PAWN && start == WHITE_PAWN_START && !(occupancy & WHITE_PAWN_LEAP_PATH))
+        {
+            targets |= attacks::squareBit(WHITE_PAWN_START + 2);
+        }
+        else if (piece == (PIECE_PAWN | COLOUR_BLACK) && start == BLACK_PAWN_START &&
+                 !(occupancy & BLACK_PAWN_LEAP_PATH))
+        {
+            targets |= attacks::squareBit(BLACK_PAWN_START - 2);
+        }
+
+        const unsigned int startBit = attacks::squareBit(start);
+        for (; targets; targets &= targets - 1)
+        {
+            const unsigned int end = attacks::lowestSquare(targets);
+
+            // Legality: the move is legal exactly when it does not leave our own king
+            // attacked. Board, occupancy and king square all update in constant time.
+            const unsigned long long next = applyMoveToBoard(board, (start << 4) | end);
+            const unsigned int nextOccupancy = (occupancy & ~startBit) | attacks::squareBit(end);
+            const unsigned int nextKing = (start == kingSquare) ? end : kingSquare;
+            if (!isSquareAttacked(next, nextOccupancy, nextKing, !player))
+            {
+                moves[count++] = static_cast<unsigned char>((start << 4) | end);
+            }
+        }
+    }
+    return count;
+}
+
+/*
+Get a vector of ints representing all legal moves by the given player. Convenience
+wrapper over generateMoves for callers that are not in a hot loop.
 */
 vector<unsigned int> getMoves(unsigned long long board, bool player)
 {
-    vector<unsigned int> moves;
-    unsigned long long originalBoard = board;
-    unsigned int opponentAttackedSquares = getAttackedSquares(board, !player);
-    unsigned int occupancy = getOccupancy(board);                     // store occupancy.
-    unsigned int playerOccupancy = getPlayerOccupancy(board, player); // store player occupancy.
-
-    for (int start = BOARD_SIZE - 1; start >= 0; start--) // check every square for attacks.
-    {
-        // We are checking the [start] indexed space, from the left.
-        unsigned int piece_nibble = getLastNibble(board); // get last nibble.
-        if (isPieceOfPlayer(piece_nibble, player))
-        {
-            if (piece_nibble > 9)
-            {                      // black, non-pawn piece.
-                piece_nibble %= 8; // get the white piece equivalent.
-            }
-            unsigned long long key = (piece_nibble << 20) | (start << 16) | (occupancy);
-            unsigned int movementSquares = attackLookup[key];
-            unsigned int validMovementSquares = movementSquares & (~playerOccupancy);
-
-            // Extra pawn movement, if available.
-            if (piece_nibble == 1 && start == 5 && !((occupancy >> 8) & 3))
-            // is white pawn in starting position and board does not have anything in spaces 6 and 7.
-            {
-                validMovementSquares |= 256; // add index 7 to possible movement.
-            }
-            else if (piece_nibble == 9 && start == 10 && !((occupancy >> 6) & 3))
-            // is black pawn in starting position and board does not have anything in spaces 8 and 9.
-            {
-                validMovementSquares |= 128; // add index 8 to possible movement.
-            }
-
-            // Loop over ending squares in validMovementSquares.
-            // This way we get all the (start, end) moves.
-            for (int end = BOARD_SIZE - 1; end >= 0; end--)
-            {
-                if (1 & validMovementSquares)
-                {                                           // check if this has been flagged as a valid end move.
-                    unsigned int move = (start << 4) | end; // build move.
-                    if (!isInCheck(applyMoveToBoard(originalBoard, move), player))
-                    {
-                        // Only add the move if, when we try it, the player is not in check.
-                        moves.push_back(move);
-                    }
-                }
-                validMovementSquares = validMovementSquares >> 1;
-            }
-        }
-        board = board >> 4;
-    }
-
-    return moves;
+    unsigned char buffer[MAX_MOVES];
+    const unsigned int count = generateMoves(board, player, buffer);
+    return vector<unsigned int>(buffer, buffer + count);
 }
 
 /*
@@ -660,81 +734,14 @@ player to move next.
 */
 vector<unsigned long long> getNextBoards(unsigned long long board, bool player)
 {
+    unsigned char buffer[MAX_MOVES];
+    const unsigned int count = generateMoves(board, player, buffer);
     vector<unsigned long long> nextBoards;
-    vector<unsigned int> moves = getMoves(board, player);
-    for (unsigned int move : moves)
+    nextBoards.reserve(count);
+    for (unsigned int i = 0; i < count; i++)
     {
-        unsigned long long nextBoard = applyMoveToBoard(board, move);
-        nextBoards.push_back(nextBoard);
+        nextBoards.push_back(applyMoveToBoard(board, buffer[i]));
     }
-    return nextBoards;
-}
-
-/*
-Given a set of boards, return all possible next boards. Unlike looping over
-getNextBoards, this attempts to do this all in bulk, so some results are cached. This
-(in theory) should lead to a speedup, at the cost of not having nice and composable
-functions.
-*/
-set<unsigned long long> getNextBoardsBulk(set<unsigned long long> boards, bool player)
-{
-    set<unsigned long long> nextBoards;
-
-    // Iterate over each board, getting all possible (and importantly, not necessarily
-    // legal) next boards.
-    for (unsigned long long board : boards)
-    {
-        unsigned long long originalBoard = board;
-        unsigned int opponentAttackedSquares = getAttackedSquares(board, !player);
-        unsigned int occupancy = getOccupancy(board);                     // store occupancy.
-        unsigned int playerOccupancy = getPlayerOccupancy(board, player); // store player occupancy.
-
-        for (int start = BOARD_SIZE - 1; start >= 0; start--) // check every square for attacks.
-        {
-            // We are checking the [start] indexed space, from the left.
-            unsigned int piece_nibble = getLastNibble(board); // get last nibble.
-            if (isPieceOfPlayer(piece_nibble, player))
-            {
-                if (piece_nibble > 9)
-                {                      // black, non-pawn piece.
-                    piece_nibble %= 8; // get the white piece equivalent.
-                }
-                unsigned long long key = (piece_nibble << 20) | (start << 16) | (occupancy);
-                unsigned int movementSquares = attackLookup[key];
-                unsigned int validMovementSquares = movementSquares & (~playerOccupancy);
-
-                // Extra pawn movement, if available.
-                if (piece_nibble == 1 && start == 5 && !((occupancy >> 8) & 3))
-                // is white pawn in starting position and board does not have anything in spaces 6 and 7.
-                {
-                    validMovementSquares |= 256; // add index 7 to possible movement.
-                }
-                else if (piece_nibble == 9 && start == 10 && !((occupancy >> 6) & 3))
-                // is black pawn in starting position and board does not have anything in spaces 8 and 9.
-                {
-                    validMovementSquares |= 128; // add index 8 to possible movement.
-                }
-
-                // Loop over ending squares in validMovementSquares.
-                // This way we get all the (start, end) moves.
-                for (int end = BOARD_SIZE - 1; end >= 0; end--)
-                {
-                    if (1 & validMovementSquares)
-                    {                                                             // check if this has been flagged as a valid end move.
-                        unsigned int move = (start << 4) | end;                   // build move.
-                        nextBoards.insert(applyMoveToBoard(originalBoard, move)); // apply move.
-                    }
-                    validMovementSquares = validMovementSquares >> 1;
-                }
-            }
-            board = board >> 4;
-        }
-    }
-
-    // Build lambda to use and erase if new board puts player in check.
-    auto isInCheckTest = [&](unsigned long long b)
-    { return isInCheck(b, player); };
-    std::erase_if(nextBoards, isInCheckTest);
     return nextBoards;
 }
 
@@ -750,7 +757,6 @@ C    checkmate flag
 0000 0 game still in progress
 1001 9 white victory
 1000 8 black victory
-0100 4 draw, 150+ fullmove
 0101 5 draw, stalemate
 0110 6 draw, 50-move rule
 0111 7 draw, insufficient material
@@ -765,43 +771,51 @@ situations by checking if the player to move is checkmated first, but in a real 
 previous turn would have been prevented.
 
 Unlike the official rules of chess, the 50-move rule is automatically enforced as a
-draw. The game is also a draw at 150 fullmoves.
+draw. Checkmate is tested first, so mating on the hundredth halfmove is still a win.
 
-Threefold repetition cannot be tested within a single position, so it is excluded here.
+Threefold repetition cannot be tested within a single position, so it is excluded here;
+the search tracks it along the current line instead.
+
+The caller passes the number of legal moves it has already generated, so the move list
+is never built twice for the same node.
 */
-int checkPosition(
+inline int checkPosition(
     unsigned long long board,
     bool active,
     unsigned int halfmove,
-    unsigned int fullmove)
+    unsigned int legalMoveCount)
 {
-    if (fullmove >= 150)
-    {
-        return 4; // hard cap at 150 fullmoves.
-    }
-    else if (getMoves(board, active).size() == 0)
+    if (legalMoveCount == 0)
     {
         if (isInCheck(board, active)) // if player to move is in check...
         {
             return active ? 8 : 9; // player not to move is the winner.
         }
-        else
-        {
-            return 5; // stalemate.
-        }
+        return 5; // stalemate.
     }
-    else if (halfmove >= 100)
+    if (halfmove >= 100)
     {
         return 6; // 50-move rule.
     }
-    else if (isInsufficientMaterialPieceSet(getPieceSet(board)))
+    if (isInsufficientMaterialPieceSet(getPieceSet(board)))
     {
         return 7; // insufficient material.
     }
-    else
-    {
-        return 0; // game still in progress.
-    }
+    return 0; // game still in progress.
+}
+
+/*
+Convenience overload that generates the move list itself.
+*/
+inline int checkPosition(
+    unsigned long long board,
+    bool active,
+    unsigned int halfmove,
+    unsigned int /*fullmove*/,
+    bool /*disambiguate*/)
+{
+    unsigned char buffer[MAX_MOVES];
+    return checkPosition(board, active, halfmove, generateMoves(board, active, buffer));
 }
 
 /*

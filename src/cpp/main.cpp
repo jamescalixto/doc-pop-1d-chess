@@ -1,18 +1,25 @@
 #include "evaluate.h"
-#include <time.h>
 
-int main() {
-  printf("Starting run...\n");
-  clock_t tStart = clock();
+#include <cstdio>
+#include <cstdlib>
 
-  // evaluateFenceVerbose("K..............k b 0 1", 10); // should be 0
-  // evaluateFenceVerbose("K....n.........k b 0 1", 10);
-  // evaluateFenceVerbose("........K.n....k b 0 1", 20);
-  // evaluateFenceVerbose("KQRB..NP.p.nbrqk b 0 1", 10); // should be b +100
-  // evaluateFenceVerbose("KQRBN.P.pn..brqk w 0 1", 10); // should be w +100
-  // evaluateFenceVerbose(START_FENCE, 12);
-  // evaluateFenceVerbose(START_FENCE, 20);
-  evaluateFenceVerbose(START_FENCE, 12);
+/*
+Alpha-beta driver.
 
-  printf("Time taken: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
+  ./main                       search the start position to depth 12
+  ./main <depth>               search the start position to <depth>
+  ./main <depth> "<fence>"     search the given position
+
+Note that a score here is a heuristic, not a proof, unless the line printed above it says
+"proven". Searching the start position deeper will not change that: the game is far too
+long to resolve by forward search from move one. See src/cpp/retro for the approach that
+actually terminates.
+*/
+int main(int argc, char **argv)
+{
+    const int depth = (argc > 1) ? std::atoi(argv[1]) : 12;
+    const string fence = (argc > 2) ? string(argv[2]) : START_FENCE;
+
+    std::printf("Starting run...\n");
+    evaluateFenceVerbose(fence, depth);
 }

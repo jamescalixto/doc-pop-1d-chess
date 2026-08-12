@@ -1,12 +1,22 @@
 #include "evaluate.h"
 #include <algorithm>
+#include <set>
 
 using std::prev_permutation;
+using std::set;
 
 /*
  * Script to help generate endgame tables for faster endgame resolution.
  * Essentially iterating through all possible endgame states for a given set of pieces
  * and writing the results to a file.
+ *
+ * SUPERSEDED by src/cpp/retro. This generates a table by running a fixed-depth forward
+ * search on every position, which costs a whole search per entry and — because a
+ * depth-limited search with a material heuristic is not a proof — does not actually
+ * produce exact values. The retrograde solver labels the same positions exactly, in one
+ * backward pass over each slice, and covers material the forward search cannot reach.
+ * Kept because the enumeration helpers below are still occasionally handy; it is
+ * deliberately not part of the default build.
  */
 
 // Constant to store board pieces, as nibbles.
