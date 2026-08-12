@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <random>
 
 /*
@@ -474,26 +475,92 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
     return disagreements;
 }
 
-static int commandSolve(unsigned int maxPieces, Mode mode, bool mirror, bool verbose)
+static string formatBytes(uint64_t bytes)
 {
-    const auto started = std::chrono::steady_clock::now();
-    Solver solver(mode, mirror);
+    char buffer[32];
+    if (bytes < (1ull << 20))
+    {
+        std::snprintf(buffer, sizeof(buffer), "%.1f KiB", bytes / 1024.0);
+    }
+    else if (bytes < (1ull << 30))
+    {
+        std::snprintf(buffer, sizeof(buffer), "%.1f MiB", bytes / 1048576.0);
+    }
+    else
+    {
+        std::snprintf(buffer, sizeof(buffer), "%.2f GiB", bytes / 1073741824.0);
+    }
+    return buffer;
+}
 
-    std::printf("solving every slice with at most %u pieces  [%s%s]\n", maxPieces,
+/*
+What a run will cost, printed before it starts. Slice construction is pure combinatorics,
+so this is a fraction of a second even for the whole game — much better than discovering
+at minute seventy that the largest slice does not fit.
+*/
+static void printPlan(const SolvePlan &plan, Mode mode, bool mirror, double ratePerSecond)
+{
+    std::printf("plan: %llu slices, %.3fB positions  [%s%s]\n", plan.slices, plan.positions / 1e9,
                 mode == Mode::Wdl ? "win/draw/loss, 2 bits" : "distance to mate, 2 bytes",
                 mirror ? ", mirror symmetry" : ", no mirror");
+    std::printf("  tables                 %s resident for the whole run\n",
+                formatBytes(plan.tableBytes).c_str());
+    std::printf("  largest slice          %s, %.1fM positions\n",
+                Solver::describeSlice(plan.largestSlice).c_str(),
+                plan.largestSlicePositions / 1e6);
+    std::printf("  its working memory     %s (worst case; measured peaks run near half this)\n",
+                formatBytes(plan.largestTransientBytes).c_str());
+    std::printf("  projected peak         %s\n", formatBytes(plan.projectedPeakBytes()).c_str());
+    std::printf("  projected time         %s at %.1fM positions/s\n",
+                Solver::formatDuration(plan.positions / ratePerSecond).c_str(),
+                ratePerSecond / 1e6);
     std::fflush(stdout);
+}
+
+static int commandPlan(unsigned int maxPieces, Mode mode, bool mirror)
+{
+    Solver solver(mode, mirror);
+    printPlan(solver.plan(maxPieces), mode, mirror, 3.7e6);
+    return 0;
+}
+
+static int commandSolve(unsigned int maxPieces,
+                        Mode mode,
+                        bool mirror,
+                        bool verbose,
+                        bool runChecks,
+                        const string &tablePath)
+{
+    Solver solver(mode, mirror);
+
+    const SolvePlan expected = solver.plan(maxPieces);
+    printPlan(expected, mode, mirror, 3.7e6);
+    std::printf("\n");
+
+    if (!tablePath.empty() && !solver.openCheckpoint(tablePath))
+    {
+        std::fprintf(stderr, "could not open %s for checkpointing\n", tablePath.c_str());
+        return 2;
+    }
+
+    const auto started = std::chrono::steady_clock::now();
     solver.solve(maxPieces, verbose);
+    solver.closeCheckpoint();
 
     const SolveStats &s = solver.stats();
     const double solveSeconds = seconds(started);
-    std::printf("\n%llu slices, %llu positions in %.2fs (%.1fM positions/s)\n", s.slices,
-                s.positions, solveSeconds,
+    std::printf("\n%llu slices, %llu positions in %s (%.1fM positions/s)\n", s.slices,
+                s.positions, Solver::formatDuration(solveSeconds).c_str(),
                 static_cast<double>(s.positions) / solveSeconds / 1e6);
     std::printf("  white wins %llu\n  black wins %llu\n  draws      %llu\n  illegal    %llu\n",
                 s.whiteWins, s.blackWins, s.draws, s.illegal);
-    std::printf("  tables     %.2f MiB resident, peak %.2f MiB transient for one slice\n",
-                s.tableBytes / 1048576.0, s.peakTransientBytes / 1048576.0);
+    std::printf("  tables     %s resident, peak %s transient for one slice\n",
+                formatBytes(solver.residentBytes()).c_str(),
+                formatBytes(s.peakTransientBytes).c_str());
+    if (!tablePath.empty())
+    {
+        std::printf("  written to %s\n", tablePath.c_str());
+    }
     if (s.encodeFailures)
     {
         std::printf("  WARNING: %llu positions could not be indexed\n", s.encodeFailures);
@@ -514,6 +581,12 @@ static int commandSolve(unsigned int maxPieces, Mode mode, bool mirror, bool ver
         std::printf("  mirror symmetry: assumed, not tested (run `retro mirrorcheck`)\n");
     }
     std::fflush(stdout);
+
+    if (!runChecks)
+    {
+        std::printf("\nchecks skipped\n");
+        return s.encodeFailures == 0 ? 0 : 1;
+    }
 
     auto phase = std::chrono::steady_clock::now();
     std::printf("\nself-check\n");
@@ -648,13 +721,127 @@ static int commandMirrorCheck(unsigned int maxPieces)
 }
 
 /* ------------------------------------------------------------------------------------
+   line
+   ------------------------------------------------------------------------------------ */
+
+/*
+Walk a table-optimal line from a position and print it.
+
+A win/draw/loss table says which moves keep a win but gives no measure of progress, so
+following "any winning move" can shuffle forever without ever mating. This prefers moves
+that zero the halfmove clock — captures and pawn moves — among the moves that preserve
+the result, since those are the ones that make irreversible progress, and it stops if the
+line repeats rather than looping.
+
+That makes the line it prints a real winning line but not necessarily the shortest one.
+Its main use is the fifty-move question: the solver ignores that rule, so a win is only a
+win under FIDE if it can be forced without the halfmove clock reaching 100. A line that
+never comes close is evidence the rule does not bite here; proving it needs DTZ.
+*/
+static int commandLine(const string &fence, unsigned int maxPieces, Mode mode,
+                       const string &tablePath, int maxPlies)
+{
+    Solver solver(mode, true);
+    if (tablePath.empty() || !solver.load(tablePath))
+    {
+        solver.solve(maxPieces, false);
+    }
+
+    unsigned long long board = 0;
+    bool active = true;
+    unsigned int halfmove = 0, fullmove = 1;
+    tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+
+    bool found = false;
+    const Value start = solver.lookup(board, active, &found);
+    if (!found)
+    {
+        std::fprintf(stderr, "%s is not in the tables\n", fence.c_str());
+        return 1;
+    }
+    std::printf("%s  ->  %s\n\n", fence.c_str(), solver.describe(start).c_str());
+    std::printf("%4s  %-18s %5s  %s\n", "ply", "position", "clock", "move");
+
+    std::vector<unsigned long long> seen;
+    unsigned int worstClock = 0;
+    unsigned char moves[MAX_MOVES];
+
+    for (int ply = 0; ply < maxPlies; ++ply)
+    {
+        worstClock = std::max(worstClock, halfmove);
+        seen.push_back(board);
+
+        const unsigned int count = generateMoves(board, active, moves);
+        if (count == 0)
+        {
+            std::printf("%4d  %-18s %5u  %s\n", ply, varsToFence(board, active, 0, 1).substr(0, 16).c_str(),
+                        halfmove, isInCheck(board, active) ? "checkmate" : "stalemate");
+            break;
+        }
+
+        // Best result available, then prefer the moves that make irreversible progress.
+        int bestOrder = -2000000;
+        unsigned char best = moves[0];
+        bool bestZeroes = false;
+        for (unsigned int i = 0; i < count; ++i)
+        {
+            const unsigned int start2 = moves[i] >> 4, end = moves[i] & 15u;
+            const bool zeroes = isPawn(getNthNibble(board, start2)) ||
+                                !isEmpty(getNthNibble(board, end));
+            const Value ours =
+                solver.negate(solver.lookup(applyMoveToBoard(board, moves[i]), !active));
+            const int order = valueOrder(ours);
+            if (order > bestOrder || (order == bestOrder && zeroes && !bestZeroes))
+            {
+                bestOrder = order;
+                best = moves[i];
+                bestZeroes = zeroes;
+            }
+        }
+
+        std::printf("%4d  %-18s %5u  (%u,%u)\n", ply,
+                    varsToFence(board, active, 0, 1).substr(0, 16).c_str(), halfmove,
+                    best >> 4, best & 15);
+
+        tie(board, active, halfmove, fullmove) =
+            applyMove(board, active, halfmove, fullmove, best);
+
+        if (std::find(seen.begin(), seen.end(), board) != seen.end())
+        {
+            std::printf("      position repeats — this table has no progress measure, so the\n"
+                        "      line cannot be continued without distance-to-mate or DTZ\n");
+            break;
+        }
+    }
+
+    std::printf("\nhighest halfmove clock reached: %u\n", worstClock);
+    std::printf(
+        "\nRead this line carefully. Win/draw/loss records no distance, so every losing move\n"
+        "looks alike to the side that is lost: the defender here picks arbitrarily among\n"
+        "moves that all lose rather than resisting as long as possible. Every position in\n"
+        "the line is labelled exactly and the win is real, but the LENGTH of the line is not\n"
+        "the distance to mate, and the clock above is not the clock optimal defence would\n"
+        "produce — a defender trying to survive would avoid captures and pawn moves to run\n"
+        "the clock toward the fifty-move draw. Settling that needs DTZ.\n");
+    return 0;
+}
+
+/* ------------------------------------------------------------------------------------
    probe
    ------------------------------------------------------------------------------------ */
 
-static int commandProbe(const string &fence, unsigned int maxPieces, Mode mode)
+static int commandProbe(const string &fence, unsigned int maxPieces, Mode mode,
+                        const string &tablePath)
 {
     Solver solver(mode, true);
-    solver.solve(maxPieces, false);
+    if (tablePath.empty() || !solver.load(tablePath))
+    {
+        if (!tablePath.empty())
+        {
+            std::fprintf(stderr, "could not read %s; solving instead\n", tablePath.c_str());
+        }
+        solver.solve(maxPieces, false);
+    }
 
     unsigned long long board = 0;
     bool active = true;
@@ -689,16 +876,29 @@ int main(int argc, char **argv)
 
     // Trailing flags, accepted by any command that cares about them.
     Mode mode = Mode::Wdl;
-    bool mirror = true, verbose = true;
+    bool mirror = true, verbose = false, runChecks = true;
+    string tablePath;
+    unsigned int pieces = 5;
+    bool piecesGiven = false;
+
     for (int i = 2; i < argc; ++i)
     {
-        if (std::strcmp(argv[i], "dtm") == 0) mode = Mode::Dtm;
-        else if (std::strcmp(argv[i], "wdl") == 0) mode = Mode::Wdl;
-        else if (std::strcmp(argv[i], "nomirror") == 0) mirror = false;
-        else if (std::strcmp(argv[i], "quiet") == 0) verbose = false;
+        const string argument = argv[i];
+        if ((command == "probe" || command == "line") && i == 2) continue; // the position
+        if (argument == "dtm") mode = Mode::Dtm;
+        else if (argument == "wdl") mode = Mode::Wdl;
+        else if (argument == "nomirror") mirror = false;
+        else if (argument == "quiet") verbose = false;
+        else if (argument == "loud") verbose = true;
+        else if (argument == "nocheck") runChecks = false;
+        else if (argument.rfind("out=", 0) == 0) tablePath = argument.substr(4);
+        else if (argument.rfind("in=", 0) == 0) tablePath = argument.substr(3);
+        else if (!piecesGiven && std::atoi(argv[i]) > 0)
+        {
+            pieces = static_cast<unsigned int>(std::atoi(argv[i]));
+            piecesGiven = true;
+        }
     }
-    const unsigned int pieces =
-        (argc > 2 && std::atoi(argv[2]) > 0) ? static_cast<unsigned int>(std::atoi(argv[2])) : 5;
 
     if (command == "count")
     {
@@ -706,15 +906,28 @@ int main(int argc, char **argv)
     }
     if (command == "verify")
     {
-        return commandVerify((argc > 2) ? std::atoi(argv[2]) : 5000);
+        return commandVerify(piecesGiven ? static_cast<int>(pieces) : 5000);
+    }
+    if (command == "plan")
+    {
+        return commandPlan(piecesGiven ? pieces : 12, mode, mirror);
     }
     if (command == "solve")
     {
-        return commandSolve(pieces, mode, mirror, verbose);
+        return commandSolve(pieces, mode, mirror, verbose, runChecks, tablePath);
     }
     if (command == "mirrorcheck")
     {
         return commandMirrorCheck(pieces);
+    }
+    if (command == "line")
+    {
+        if (argc < 3)
+        {
+            std::fprintf(stderr, "line needs a FENCE string\n");
+            return 2;
+        }
+        return commandLine(argv[2], pieces, mode, tablePath, 400);
     }
     if (command == "probe")
     {
@@ -723,19 +936,19 @@ int main(int argc, char **argv)
             std::fprintf(stderr, "probe needs a FENCE string\n");
             return 2;
         }
-        unsigned int probePieces = 5;
-        for (int i = 3; i < argc; ++i)
-        {
-            if (std::atoi(argv[i]) > 0) probePieces = static_cast<unsigned int>(std::atoi(argv[i]));
-        }
-        return commandProbe(argv[2], probePieces, mode);
+        return commandProbe(argv[2], pieces, mode, tablePath);
     }
 
     std::fprintf(stderr,
                  "usage: retro count\n"
                  "       retro verify [games]\n"
-                 "       retro solve [pieces] [wdl|dtm] [nomirror] [quiet]\n"
+                 "       retro plan [pieces] [wdl|dtm] [nomirror]\n"
+                 "       retro solve [pieces] [wdl|dtm] [nomirror] [loud] [nocheck] [out=FILE]\n"
                  "       retro mirrorcheck [pieces]\n"
-                 "       retro probe \"<fence>\" [pieces] [wdl|dtm]\n");
+                 "       retro probe \"<fence>\" [pieces] [wdl|dtm] [in=FILE]\n"
+                 "       retro line \"<fence>\" [in=FILE]\n"
+                 "\n"
+                 "solve writes each slice to out=FILE as it finishes, so a run that dies can be\n"
+                 "resumed by repeating the same command. probe reads in=FILE instead of solving.\n");
     return 2;
 }

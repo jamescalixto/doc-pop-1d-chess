@@ -1,0 +1,27 @@
+plan: 4512 slices, 9.470B positions  [win/draw/loss, 2 bits, mirror symmetry]
+  tables                 2.20 GiB resident for the whole run
+  largest slice          KQRBNkqrbn, 645.8M positions
+  its working memory     3.61 GiB (worst case; measured peaks run near half this)
+  projected peak         5.81 GiB
+  projected time         43m at 3.7M positions/s
+
+loaded 4512 slices from tb12-verify.bin
+
+0 slices, 0 positions in 0s (0.0M positions/s)
+  white wins 0
+  black wins 0
+  draws      0
+  illegal    0
+  tables     2.20 GiB resident, peak 0.0 KiB transient for one slice
+  written to tb12-verify.bin
+  mirror symmetry: assumed, not tested (run `retro mirrorcheck`)
+
+self-check
+  4125581107 positions checked against their own move lists, 0 failures
+  3022.88s
+cross-check against alpha-beta
+  122 positions proven by alpha-beta and compared, 0 disagreements
+  (58 the search could not prove at the depth given, 0 differ only by the fifty-move rule)
+  3.38s
+
+PASS
