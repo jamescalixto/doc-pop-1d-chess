@@ -485,12 +485,47 @@ unsigned int getPieceSet(unsigned long long board)
 }
 
 /*
+Low bit of each nibble set exactly where that nibble is not empty. The uncompacted form
+of the occupancy, kept separate because colour flipping needs it in this layout.
+*/
+inline unsigned long long nibbleNonzeroFlags(unsigned long long board)
+{
+    return (board | (board >> 1) | (board >> 2) | (board >> 3)) & 0x1111111111111111ULL;
+}
+
+/*
 Get (as a bitflag) occupancy as a 16-bit number.
 */
 inline unsigned int getOccupancy(unsigned long long board)
 {
-    const unsigned long long nonzero = board | (board >> 1) | (board >> 2) | (board >> 3);
-    return compactNibbleFlags(nonzero & 0x1111111111111111ULL);
+    return compactNibbleFlags(nibbleNonzeroFlags(board));
+}
+
+/*
+Reverse the order of the sixteen nibbles, so square s becomes square 15 - s.
+*/
+inline unsigned long long reverseNibbles(unsigned long long x)
+{
+    x = ((x & 0x0F0F0F0F0F0F0F0FULL) << 4) | ((x >> 4) & 0x0F0F0F0F0F0F0F0FULL);
+    return __builtin_bswap64(x);
+}
+
+/*
+Reflect a board: reverse it left to right and swap the colours.
+
+This maps the game onto itself. Every rule is symmetric under it — pawns advance in
+opposite directions, the two bishops' colours exchange, and the piece order
+K < R < P < p < r < k reverses onto itself — so a position and its mirror have the same
+value from the point of view of whoever is to move. Note the side to move flips too: the
+player who was white is black in the mirror.
+
+The start position is its own mirror, which is why the answer to the whole game has to be
+symmetric.
+*/
+inline unsigned long long mirrorBoard(unsigned long long board)
+{
+    board ^= nibbleNonzeroFlags(board) << 3; // flip the colour bit of every piece
+    return reverseNibbles(board);
 }
 
 /*

@@ -92,14 +92,36 @@ binding constraint.
 ## Usage
 
 ```
-./src/cpp/compiled/retro count            # size every slice
-./src/cpp/compiled/retro verify [games]   # check the invariants and the index
-./src/cpp/compiled/retro solve [pieces]   # solve up to a piece count, then self-check
-./src/cpp/compiled/retro probe "<fence>"  # look a position up
+./src/cpp/compiled/retro count                 # size every slice
+./src/cpp/compiled/retro verify [games]        # check the invariants and the index
+./src/cpp/compiled/retro solve [pieces] [wdl|dtm] [nomirror] [quiet]
+./src/cpp/compiled/retro mirrorcheck [pieces]  # solve the same material three ways and compare
+./src/cpp/compiled/retro probe "<fence>" [pieces]
 
-./src/cpp/compiled/main [depth] [fence]   # alpha-beta search
-./src/cpp/compiled/explore [plies]        # breadth-first position counts
+./src/cpp/compiled/main [depth] [fence]        # alpha-beta search
+./src/cpp/compiled/explore [plies]             # breadth-first position counts
 ```
+
+`solve` defaults to win/draw/loss at two bits per position with mirror symmetry on, which
+is the path that scales to the whole game. `dtm` additionally carries distance to mate at
+two bytes per position; it is a verification mode for small material, deliberately written
+as a separate implementation of the same definition so that comparing the two means
+something.
+
+## Storage
+
+Three things multiply together, measured at 6 pieces:
+
+| | positions | tables |
+| --- | --- | --- |
+| distance to mate, no mirror | 145.6M | 277.6 MiB |
+| win/draw/loss, no mirror | 145.6M | 34.7 MiB |
+| win/draw/loss, mirrored | 77.3M | **18.4 MiB** |
+
+Two bits instead of two bytes is 8×; mirror symmetry is very nearly another 2×. Solving
+6 pieces went from 44.6 s to 19.2 s, and the per-position rate from 3.3M/s to 4.0M/s
+because the successor slice is now derived arithmetically from the move rather than by
+rescanning the board.
 
 ## Notation
 
@@ -122,15 +144,23 @@ Nothing here is trusted without a check that could fail:
 - `retro solve` re-derives every solved position's value from its own move list, and
   spot-checks against alpha-beta, which shares no code with it beyond move generation.
 - White wins and black wins must come out exactly equal, since reversing the board and
-  swapping colours maps the state space onto itself. Nothing in the solver knows this.
+  swapping colours maps the state space onto itself.
+- `retro mirrorcheck` solves the same material three ways — mirrored, unmirrored, and
+  with the separate distance-to-mate solver — and compares every position, plus every
+  position against its own reflection.
+
+Note that exploiting the mirror symmetry costs it as a check: once only one slice of each
+pair is solved, "white wins equals black wins" is true by construction whether or not the
+solver is right. `retro solve` says so rather than printing a reassuring tick, and
+`mirrorcheck` is what earns the guarantee back.
 
 ## Known limitations
 
 - The retrograde solver ignores the fifty-move rule, as tablebases conventionally do.
   Draws by repetition are exact. The fifty-move rule can only turn some of these wins
   into draws; capturing it needs distance-to-zeroing-move rather than distance-to-mate.
-- Solving beyond about 8 pieces needs the tables to stream to disk instead of living in
-  a `std::unordered_map` in RAM, and the 2-bit packing the sizing above assumes.
+- `PackedWdl::set` is a read-modify-write on a shared 64-bit word, so parallelising the
+  solve needs the write side partitioned by word.
 - A mate reported by the search is always a real mate, but its *distance* is only minimal
   once the depth searched covers it. The transposition table can carry a value in from a
   shallower ply and prove a mate further away than the nominal depth; a shorter one may

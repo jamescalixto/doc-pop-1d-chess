@@ -296,7 +296,7 @@ static unsigned long long selfCheck(const Solver &solver, unsigned int maxPieces
         const SolvedSlice *entry = solver.find(key);
         if (!entry)
         {
-            continue;
+            continue; // mirrored away, or above the piece limit
         }
 
         for (unsigned long long index = 0; index < entry->slice.size(); ++index)
@@ -326,12 +326,19 @@ static unsigned long long selfCheck(const Solver &solver, unsigned int maxPieces
                     {
                         const Value successor =
                             solver.lookup(applyMoveToBoard(board, moves[i]), !whiteToMove);
-                        const Value ours = negateValue(successor);
+                        const Value ours = solver.negate(successor);
                         if (valueOrder(ours) > bestOrder)
                         {
                             bestOrder = valueOrder(ours);
                             expected = ours;
                         }
+                    }
+                    // Without distances the table stores only the sign, so flatten the
+                    // expectation the same way before comparing. A position mated where
+                    // it stands is already -1, which is exactly VALUE_LOSS.
+                    if (!solver.tracksDistance() && expected != VALUE_DRAW)
+                    {
+                        expected = (expected > 0) ? VALUE_WIN : VALUE_LOSS;
                     }
                 }
 
@@ -341,7 +348,8 @@ static unsigned long long selfCheck(const Solver &solver, unsigned int maxPieces
                     {
                         std::printf("  SELF-CHECK FAILED %s: stored %s, moves say %s\n",
                                     varsToFence(board, whiteToMove, 0, 1).c_str(),
-                                    describeValue(stored).c_str(), describeValue(expected).c_str());
+                                    solver.describe(stored).c_str(),
+                                    solver.describe(expected).c_str());
                     }
                     ++failures;
                 }
@@ -400,8 +408,12 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
 
         // Give the search enough depth to prove the result the table claims. Proving a
         // draw means expanding the whole subtree, which is only affordable shallow, so
-        // deep results are left to the self-check rather than stalling here.
-        const int depth = (stored == VALUE_DRAW) ? 14 : distanceToMate(stored) + 2;
+        // deep results are left to the self-check rather than stalling here. Without
+        // distances there is nothing to size the budget from, so a fixed one is used and
+        // whatever the search cannot reach is counted as unproven.
+        const int depth = !solver.tracksDistance() ? 14
+                          : (stored == VALUE_DRAW) ? 14
+                                                   : distanceToMate(stored) + 2;
         if (depth > 20)
         {
             ++unproven;
@@ -428,9 +440,10 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
         const bool tableWin = stored > 0, tableLoss = stored < 0;
 
         bool agree = (searchWin == tableWin) && (searchLoss == tableLoss);
-        if (agree && isMateScore(score))
+        if (agree && isMateScore(score) && solver.tracksDistance())
         {
-            // Distances must match exactly too, not just the outcome.
+            // Distances must match exactly too, not just the outcome — but only where the
+            // table carries them.
             agree = (SCORE_MATE - (score > 0 ? score : -score)) == distanceToMate(stored);
         }
 
@@ -438,7 +451,7 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
         {
             // A table win longer than the fifty-move rule allows is a known, expected
             // divergence rather than a bug.
-            if (tableWin && !searchWin && distanceToMate(stored) >= 100)
+            if (tableWin && !searchWin && solver.tracksDistance() && distanceToMate(stored) >= 100)
             {
                 ++fiftyMoveGap;
                 continue;
@@ -447,7 +460,7 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
             {
                 std::printf("  DISAGREEMENT %s: table %s, search %s\n",
                             varsToFence(board, whiteToMove, 0, 1).c_str(),
-                            describeValue(stored).c_str(), Searcher::describeScore(score).c_str());
+                            solver.describe(stored).c_str(), Searcher::describeScore(score).c_str());
             }
             ++disagreements;
         }
@@ -461,12 +474,15 @@ static unsigned long long crossCheckAgainstSearch(const Solver &solver, unsigned
     return disagreements;
 }
 
-static int commandSolve(unsigned int maxPieces, bool verbose)
+static int commandSolve(unsigned int maxPieces, Mode mode, bool mirror, bool verbose)
 {
     const auto started = std::chrono::steady_clock::now();
-    Solver solver;
+    Solver solver(mode, mirror);
 
-    std::printf("solving every slice with at most %u pieces\n", maxPieces);
+    std::printf("solving every slice with at most %u pieces  [%s%s]\n", maxPieces,
+                mode == Mode::Wdl ? "win/draw/loss, 2 bits" : "distance to mate, 2 bytes",
+                mirror ? ", mirror symmetry" : ", no mirror");
+    std::fflush(stdout);
     solver.solve(maxPieces, verbose);
 
     const SolveStats &s = solver.stats();
@@ -476,16 +492,27 @@ static int commandSolve(unsigned int maxPieces, bool verbose)
                 static_cast<double>(s.positions) / solveSeconds / 1e6);
     std::printf("  white wins %llu\n  black wins %llu\n  draws      %llu\n  illegal    %llu\n",
                 s.whiteWins, s.blackWins, s.draws, s.illegal);
+    std::printf("  tables     %.2f MiB resident, peak %.2f MiB transient for one slice\n",
+                s.tableBytes / 1048576.0, s.peakTransientBytes / 1048576.0);
     if (s.encodeFailures)
     {
         std::printf("  WARNING: %llu positions could not be indexed\n", s.encodeFailures);
     }
 
-    // White wins and black wins must match exactly: reversing the board and swapping
-    // colours maps the state space onto itself and negates every value. Nothing in the
-    // solver knows this, so it is a free end-to-end check.
-    std::printf("  mirror symmetry: %s\n",
-                (s.whiteWins == s.blackWins) ? "holds" : "BROKEN — results are suspect");
+    // Reversing the board and swapping colours maps the state space onto itself and
+    // preserves every value, so white wins and black wins must come out equal. This is a
+    // real end-to-end check ONLY when the solver did not assume the symmetry; once half
+    // the slices are mirrored away it is true by construction and proves nothing. Use
+    // `retro mirrorcheck` for the version that still has teeth.
+    if (!mirror)
+    {
+        std::printf("  mirror symmetry: %s\n",
+                    (s.whiteWins == s.blackWins) ? "holds" : "BROKEN — results are suspect");
+    }
+    else
+    {
+        std::printf("  mirror symmetry: assumed, not tested (run `retro mirrorcheck`)\n");
+    }
     std::fflush(stdout);
 
     auto phase = std::chrono::steady_clock::now();
@@ -507,12 +534,126 @@ static int commandSolve(unsigned int maxPieces, bool verbose)
 }
 
 /* ------------------------------------------------------------------------------------
+   mirrorcheck
+   ------------------------------------------------------------------------------------ */
+
+/*
+Exploiting the mirror symmetry costs us the symmetry as a check: once only one slice of
+each pair is solved, "white wins equals black wins" holds by construction whether or not
+the solver is correct. This earns it back by solving the same material twice — once
+mirrored, once not — and comparing every position, and by running the win/draw/loss and
+distance-to-mate solvers against each other, which are separate implementations of the
+same definition.
+*/
+static int commandMirrorCheck(unsigned int maxPieces)
+{
+    std::printf("solving up to %u pieces four ways\n", maxPieces);
+    std::fflush(stdout);
+
+    Solver plain(Mode::Wdl, false);
+    plain.solve(maxPieces, false);
+    std::printf("  wdl, no mirror : %llu positions, %.2f MiB\n", plain.stats().positions,
+                plain.stats().tableBytes / 1048576.0);
+    std::fflush(stdout);
+
+    Solver mirrored(Mode::Wdl, true);
+    mirrored.solve(maxPieces, false);
+    std::printf("  wdl, mirrored  : %llu positions, %.2f MiB\n", mirrored.stats().positions,
+                mirrored.stats().tableBytes / 1048576.0);
+    std::fflush(stdout);
+
+    Solver dtm(Mode::Dtm, false);
+    dtm.solve(maxPieces, false);
+    std::printf("  dtm, no mirror : %llu positions, %.2f MiB\n", dtm.stats().positions,
+                dtm.stats().tableBytes / 1048576.0);
+    std::fflush(stdout);
+
+    std::printf("  unmirrored table is %.2fx the mirrored one\n",
+                static_cast<double>(plain.stats().tableBytes) / mirrored.stats().tableBytes);
+
+    // The unmirrored run never assumed the symmetry, so this still means something.
+    std::printf("  mirror symmetry in the unmirrored run: %s\n",
+                (plain.stats().whiteWins == plain.stats().blackWins) ? "holds" : "BROKEN");
+
+    unsigned long long compared = 0, mirrorFailures = 0, dtmFailures = 0, reflectFailures = 0;
+    Slice slice;
+    for (const SliceKey &key : allSliceKeys())
+    {
+        if (key.pieceCount() > maxPieces || !slice.build(key))
+        {
+            continue;
+        }
+        for (unsigned long long index = 0; index < slice.size(); ++index)
+        {
+            const unsigned long long board = slice.decode(index);
+            for (unsigned int side = 0; side < 2; ++side)
+            {
+                const bool whiteToMove = (side == 0);
+                const Value a = plain.lookup(board, whiteToMove);
+                const Value b = mirrored.lookup(board, whiteToMove);
+                const Value c = dtm.lookup(board, whiteToMove);
+                ++compared;
+
+                if (a != b)
+                {
+                    if (mirrorFailures < 5)
+                    {
+                        std::printf("  MIRROR MISMATCH %s: plain %s, mirrored %s\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    describeValue(a, false).c_str(), describeValue(b, false).c_str());
+                    }
+                    ++mirrorFailures;
+                }
+
+                // Compare the two solvers on outcome; only the dtm one carries distances.
+                const int wdlSign = (a == VALUE_ILLEGAL) ? 2 : (a > 0) - (a < 0);
+                const int dtmSign = (c == VALUE_ILLEGAL) ? 2 : (c > 0) - (c < 0);
+                if (wdlSign != dtmSign)
+                {
+                    if (dtmFailures < 5)
+                    {
+                        std::printf("  WDL/DTM MISMATCH %s: wdl %s, dtm %s\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    describeValue(a, false).c_str(), describeValue(c, true).c_str());
+                    }
+                    ++dtmFailures;
+                }
+
+                // A position and its reflection must carry the same value outright.
+                const Value reflected = plain.lookup(mirrorBoard(board), !whiteToMove);
+                if (a != reflected)
+                {
+                    if (reflectFailures < 5)
+                    {
+                        std::printf("  REFLECTION MISMATCH %s: %s vs %s\n",
+                                    varsToFence(board, whiteToMove, 0, 1).c_str(),
+                                    describeValue(a, false).c_str(),
+                                    describeValue(reflected, false).c_str());
+                    }
+                    ++reflectFailures;
+                }
+            }
+        }
+    }
+
+    std::printf("\n  %llu positions compared\n", compared);
+    std::printf("    mirrored vs unmirrored solve : %llu mismatches\n", mirrorFailures);
+    std::printf("    wdl solver vs dtm solver     : %llu mismatches\n", dtmFailures);
+    std::printf("    position vs its reflection   : %llu mismatches\n", reflectFailures);
+
+    const bool ok = (mirrorFailures == 0 && dtmFailures == 0 && reflectFailures == 0 &&
+                     plain.stats().whiteWins == plain.stats().blackWins);
+    std::printf("\n%s\n", ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------------------
    probe
    ------------------------------------------------------------------------------------ */
 
-static int commandProbe(const string &fence, unsigned int maxPieces)
+static int commandProbe(const string &fence, unsigned int maxPieces, Mode mode)
 {
-    Solver solver;
+    Solver solver(mode, true);
     solver.solve(maxPieces, false);
 
     unsigned long long board = 0;
@@ -528,16 +669,16 @@ static int commandProbe(const string &fence, unsigned int maxPieces)
                     fence.c_str(), maxPieces);
         return 1;
     }
-    std::printf("%s\n  %s\n", fence.c_str(), describeValue(value).c_str());
+    std::printf("%s\n  %s\n", fence.c_str(), solver.describe(value).c_str());
 
-    // Show the best move and how each option holds up.
+    // Show how each option holds up.
     unsigned char moves[MAX_MOVES];
     const unsigned int count = generateMoves(board, active, moves);
     for (unsigned int i = 0; i < count; ++i)
     {
         const Value successor = solver.lookup(applyMoveToBoard(board, moves[i]), !active);
         std::printf("  (%u,%u) -> %s\n", moves[i] >> 4, moves[i] & 15,
-                    describeValue(negateValue(successor)).c_str());
+                    solver.describe(solver.negate(successor)).c_str());
     }
     return 0;
 }
@@ -545,6 +686,19 @@ static int commandProbe(const string &fence, unsigned int maxPieces)
 int main(int argc, char **argv)
 {
     const string command = (argc > 1) ? argv[1] : "count";
+
+    // Trailing flags, accepted by any command that cares about them.
+    Mode mode = Mode::Wdl;
+    bool mirror = true, verbose = true;
+    for (int i = 2; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "dtm") == 0) mode = Mode::Dtm;
+        else if (std::strcmp(argv[i], "wdl") == 0) mode = Mode::Wdl;
+        else if (std::strcmp(argv[i], "nomirror") == 0) mirror = false;
+        else if (std::strcmp(argv[i], "quiet") == 0) verbose = false;
+    }
+    const unsigned int pieces =
+        (argc > 2 && std::atoi(argv[2]) > 0) ? static_cast<unsigned int>(std::atoi(argv[2])) : 5;
 
     if (command == "count")
     {
@@ -556,8 +710,11 @@ int main(int argc, char **argv)
     }
     if (command == "solve")
     {
-        return commandSolve((argc > 2) ? static_cast<unsigned int>(std::atoi(argv[2])) : 5,
-                            (argc > 3) ? std::strcmp(argv[3], "quiet") != 0 : true);
+        return commandSolve(pieces, mode, mirror, verbose);
+    }
+    if (command == "mirrorcheck")
+    {
+        return commandMirrorCheck(pieces);
     }
     if (command == "probe")
     {
@@ -566,10 +723,19 @@ int main(int argc, char **argv)
             std::fprintf(stderr, "probe needs a FENCE string\n");
             return 2;
         }
-        return commandProbe(argv[2], (argc > 3) ? static_cast<unsigned int>(std::atoi(argv[3])) : 5);
+        unsigned int probePieces = 5;
+        for (int i = 3; i < argc; ++i)
+        {
+            if (std::atoi(argv[i]) > 0) probePieces = static_cast<unsigned int>(std::atoi(argv[i]));
+        }
+        return commandProbe(argv[2], probePieces, mode);
     }
 
     std::fprintf(stderr,
-                 "usage: retro count | verify [games] | solve [pieces] | probe \"<fence>\" [pieces]\n");
+                 "usage: retro count\n"
+                 "       retro verify [games]\n"
+                 "       retro solve [pieces] [wdl|dtm] [nomirror] [quiet]\n"
+                 "       retro mirrorcheck [pieces]\n"
+                 "       retro probe \"<fence>\" [pieces] [wdl|dtm]\n");
     return 2;
 }

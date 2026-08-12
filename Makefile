@@ -51,7 +51,10 @@ count: $(BUILD_DIR)/retro
 solve: $(BUILD_DIR)/retro
 	./$(BUILD_DIR)/retro solve
 
+mirrorcheck: $(BUILD_DIR)/retro
+	./$(BUILD_DIR)/retro mirrorcheck
+
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all tests check run count solve clean
+.PHONY: all tests check run count solve mirrorcheck clean
