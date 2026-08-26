@@ -1,5 +1,3 @@
-import cProfile
-import functools
 import position as Position
 
 
@@ -16,6 +14,10 @@ def explore(max_level):
     """Explore and enumerate the game tree.
     We use "states" — the more lightweight (board, active) tuple — instead of the full
     position string.
+
+    Counts states never seen at any earlier ply, which matches the "new" column of the
+    C++ explore tool (4, 16, 51, 156, ...), not its "reachable at exactly N" column
+    (which recounts positions that recur at a later ply, e.g. 158 at ply 4).
     """
     seen_states = set()
     current_level = 0
@@ -34,7 +36,7 @@ def explore(max_level):
         states = {s for s in next_states if s not in seen_states}
         current_level += 1
         print(
-            "# positions reachable after {} halfmoves = {}".format(
+            "# new positions after {} halfmoves = {}".format(
                 str(current_level).rjust(3), len(states)
             )
         )

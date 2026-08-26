@@ -207,15 +207,18 @@ def test_score_position(position, max_depth=20):
 @functools.lru_cache(maxsize=CACHE_SIZE)
 def test_next_moves(position, max_depth=16):
     print("")
+    # Score each successor for the player making the move. Without starting_player,
+    # score_position would default to the successor's own mover — the opponent — and
+    # the ranking below would come out inverted.
+    active = position.split(" ")[1]
     next_moves = Position.get_current_moves(position)
-    next_tuples = [
-        (
-            next_move,
-            Position.apply_move(position, next_move),
-            score_position(Position.apply_move(position, next_move), max_depth=max_depth),
+    next_tuples = []
+    for next_move in next_moves:
+        next_position = Position.apply_move(position, next_move)
+        score = score_position(
+            next_position, starting_player=active, max_depth=max_depth
         )
-        for next_move in next_moves
-    ]  # get move/position/score tuples.
+        next_tuples.append((next_move, next_position, score))
     next_tuples.sort(key=lambda t: t[2][0], reverse=True)  # sort highest to lowest.
 
     print(position)

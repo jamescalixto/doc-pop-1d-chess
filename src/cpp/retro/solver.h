@@ -2,6 +2,7 @@
 
 #include "retro/slice.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -308,9 +309,11 @@ public:
     Plies of clock before the fifty-move rule declares a draw. Always 100 in a real run.
     Settable only so tests can shrink it: at small material every win is short, so with the
     real limit the cap never triggers and a broken cap would pass unnoticed. Turning it
-    down forces the rule to bite everywhere.
+    down forces the rule to bite everywhere. Clamped to [0, MAX_CLOCK_BUDGET]: the bucket
+    queue and the int8_t budgets are sized for 100 plies, so a larger limit would index
+    past them.
     */
-    void setClockLimit(int plies) { clockLimit = plies; }
+    void setClockLimit(int plies) { clockLimit = std::clamp(plies, 0, MAX_CLOCK_BUDGET); }
     int clockLimitPlies() const { return clockLimit; }
     bool mirroring() const { return useMirror; }
     Value negate(Value v) const { return negateValue(v, tracksDistance()); }
@@ -429,9 +432,13 @@ public:
             {
                 continue; // its mirror carries the answer
             }
-            if (solved.count(key.packed()))
+            if (const SolvedSlice *loaded = find(key))
             {
-                continue; // already on the shelf, from a resumed checkpoint
+                // Already on the shelf from a resumed checkpoint. Counted so the
+                // progress line agrees with plan() instead of starting from zero.
+                ++sliceIndex;
+                done += 2 * loaded->slice.size();
+                continue;
             }
 
             solveSlice(key, verbose);
@@ -1160,9 +1167,6 @@ private:
             }
         }
 
-        const uint64_t peak = state.capacity() + counter.capacity() +
-                              static_cast<uint64_t>(worklist.capacity()) * sizeof(uint32_t);
-
         // Pass 2: backward induction inside the slice.
         while (!worklist.empty())
         {
@@ -1197,6 +1201,11 @@ private:
                 },
                 encodeFailures);
         }
+
+        // Measured after pass 2 so the worklist's growth during the induction counts;
+        // vector capacities never shrink, so this is the true high-water mark.
+        const uint64_t peak = state.capacity() + counter.capacity() +
+                              static_cast<uint64_t>(worklist.capacity()) * sizeof(uint32_t);
 
         // Whatever survived the fixpoint unlabelled is a draw: neither side can force a
         // result, so the game goes on forever.
@@ -1397,6 +1406,15 @@ private:
                     },
                     encodeFailures);
             }
+            // Re-measure before this bucket is freed, so growth during the induction
+            // counts toward the reported peak.
+            uint64_t current = value.capacity() + counter.capacity() + lossValue.capacity();
+            for (const auto &bucket : buckets)
+            {
+                current += bucket.capacity() * sizeof(uint32_t);
+            }
+            peak = std::max(peak, current);
+
             // Nothing reads a bucket once it has been passed.
             buckets[budget].clear();
             buckets[budget].shrink_to_fit();
@@ -1533,12 +1551,13 @@ private:
             }
         }
 
-        const uint64_t peak = entry.dtm.capacity() * sizeof(Value) + counter.capacity() +
-                              lossValue.capacity() * sizeof(Value) +
-                              queue.size() * sizeof(Pending);
+        const uint64_t fixedBytes = entry.dtm.capacity() * sizeof(Value) + counter.capacity() +
+                                    lossValue.capacity() * sizeof(Value);
+        std::size_t maxQueued = queue.size();
 
         while (!queue.empty())
         {
+            maxQueued = std::max(maxQueued, queue.size());
             const Pending pending = queue.top();
             queue.pop();
             if (isResolved(entry.dtm[pending.slot]))
@@ -1590,7 +1609,7 @@ private:
                           : (value < 0)            ? STATE_LOSS
                                                    : STATE_DRAW;
         }
-        return peak;
+        return fixedBytes + maxQueued * sizeof(Pending);
     }
 };
 

@@ -107,4 +107,5 @@ def build_permutations_from_additional_pieces(
                 print(position_black, result_black)
 
 
-build_permutations_from_additional_pieces("bp", find_stalemates=False)
+if __name__ == "__main__":
+    build_permutations_from_additional_pieces("bp", find_stalemates=False)

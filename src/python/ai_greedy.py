@@ -32,4 +32,4 @@ def move(position):
             return target_value
 
     moves = sorted(moves, key=lambda m: move_score(m), reverse=True)
-    return moves[0]
+    return moves[0] if moves else None

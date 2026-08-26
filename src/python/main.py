@@ -66,43 +66,46 @@ def run_games(num_games):
                 round(elapsed, 2), round(elapsed / num_games, 3)
             )
         )
+        if not game_lengths:
+            return
         print("Game length information (in fullmoves):")
         print(
             "min: {}, max: {}, mean: {:.2f}, stdev: {:.2f}, median: {}".format(
                 min(game_lengths),
                 max(game_lengths),
                 stats.mean(game_lengths),
-                stats.stdev(game_lengths),
+                stats.stdev(game_lengths) if len(game_lengths) > 1 else 0.0,
                 stats.median(game_lengths),
             )
         )
 
+    # Initialized before the try so the salvage path below always has them, even if
+    # the very first game raises.
+    start = timer()
+    c = Counter()
+    game_lengths = []
     try:
-        start = timer()
-        c = Counter()
-        game_lengths = []
         for n in range(num_games):
             state, game_length = run_game(verbose=False)
             c[state[0]] += 1
             game_lengths.append(game_length)
             print(n, state, game_length)
-        end = timer()
-        elapsed = end - start  # elapsed time to run all games.
-        print_games_info(c, elapsed, game_lengths)
+        print_games_info(c, timer() - start, game_lengths)
 
     except Exception as e:
         # In case there's an exception, try to salvage the run data.
         print(e)
         print(c)
-        print_games_info(c, elapsed, game_lengths)
+        print_games_info(c, timer() - start, game_lengths)
 
 
-# run_games(10000)
-evaluate.test_score_position("K....n.........k b 0 1")
-# evaluate.test_score_position("K.....nbP......k w 0 1")
-# evaluate.test_score_position("KQRB..NP.p.nbrqk b 0 1")
-# evaluate.test_score_position(Position.START_POSITION)
-# evaluate.test_next_moves("K....n.........k b 0 1")
-# evaluate.test_next_moves("K.....nbP......k w 0 1")
-# evaluate.test_next_moves("KQRB..NP.p.nbrqk b 0 1")
-# evaluate.test_next_moves(Position.START_POSITION)
+if __name__ == "__main__":
+    # run_games(10000)
+    evaluate.test_score_position("K....n.........k b 0 1")
+    # evaluate.test_score_position("K.....nbP......k w 0 1")
+    # evaluate.test_score_position("KQRB..NP.p.nbrqk b 0 1")
+    # evaluate.test_score_position(Position.START_POSITION)
+    # evaluate.test_next_moves("K....n.........k b 0 1")
+    # evaluate.test_next_moves("K.....nbP......k w 0 1")
+    # evaluate.test_next_moves("KQRB..NP.p.nbrqk b 0 1")
+    # evaluate.test_next_moves(Position.START_POSITION)

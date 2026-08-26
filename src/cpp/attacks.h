@@ -31,8 +31,10 @@ inline constexpr unsigned int BOARD_SIZE = 16;
 // Every square, used as the "ray" for rook-like movement.
 inline constexpr unsigned int FULL_RAY = 0xFFFFu;
 
-// Every other square, used as the ray for bishop-like movement. Indexed by bit parity,
-// which is the same as square parity because the two differ by the odd constant 15.
+// Every other square, used as the ray for bishop-like movement. Indexed by bit parity.
+// A square's bit is 15 - s, so bit parity is the OPPOSITE of square parity — but the
+// piece's own position and the ray are both expressed in bit space, so two squares
+// share a parity exactly when their bits do, and indexing by bit parity is consistent.
 inline constexpr unsigned int PARITY_RAY[2] = {0x5555u, 0xAAAAu};
 
 // Mask of the single square `s`.

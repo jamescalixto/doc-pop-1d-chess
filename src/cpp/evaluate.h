@@ -183,6 +183,7 @@ public:
                         bool verbose = false)
     {
         int score = 0;
+        indeterminateOut = true; // stays true if maxDepth < 1 and no pass ever runs
         SearchStats totals;
         for (int depth = 1; depth <= maxDepth; ++depth)
         {
@@ -469,6 +470,13 @@ inline void evaluateFenceVerbose(string fence, int maxDepth, bool verbose = true
     bool active = true;
     unsigned int halfmove = 0, fullmove = 1;
     tie(board, active, halfmove, fullmove) = fenceToVars(fence, board, active, halfmove, fullmove);
+
+    // Both kings must be on the board, or the string was not a position.
+    if (findKing(board, true) == NO_SQUARE || findKing(board, false) == NO_SQUARE)
+    {
+        std::printf("could not read \"%s\" as a position (both kings required)\n", fence.c_str());
+        return;
+    }
 
     vector<unsigned int> pv;
     bool indeterminate = true;

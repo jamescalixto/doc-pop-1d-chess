@@ -714,6 +714,13 @@ inline unsigned int generateMoves(unsigned long long board, bool player, unsigne
     const unsigned int ownOccupancy = player ? (occupancy & ~black) : black;
     const unsigned int kingSquare = findKing(board, player);
 
+    // A board without the mover's king is not a chess position. Indexing the attack
+    // tables with NO_SQUARE is undefined behaviour, so refuse rather than proceed.
+    if (kingSquare == NO_SQUARE)
+    {
+        return 0;
+    }
+
     unsigned int count = 0;
     for (unsigned int pieces = ownOccupancy; pieces; pieces &= pieces - 1)
     {

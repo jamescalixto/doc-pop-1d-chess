@@ -950,11 +950,12 @@ static int commandCompare(const string &pathA, const string &pathB)
             }
         }
     }
+    const double denominator = compared ? static_cast<double>(compared) : 1.0;
     std::printf("%llu legal positions compared\n", compared);
     std::printf("  unchanged by the fifty-move rule   %llu (%.4f%%)\n", same,
-                100.0 * same / compared);
+                100.0 * same / denominator);
     std::printf("  wins turned into draws by it       %llu (%.4f%%)\n", weakened,
-                100.0 * weakened / compared);
+                100.0 * weakened / denominator);
     std::printf("  impossible transitions             %llu%s\n", impossible,
                 impossible ? "   <-- BUG" : "");
     return impossible == 0 ? 0 : 1;

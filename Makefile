@@ -4,7 +4,7 @@ SRC_DIR = src/cpp
 BUILD_DIR = src/cpp/compiled
 
 BINARIES = $(BUILD_DIR)/main $(BUILD_DIR)/explore $(BUILD_DIR)/retro
-TESTS = $(BUILD_DIR)/perft $(BUILD_DIR)/verify_attacks
+TESTS = $(BUILD_DIR)/perft $(BUILD_DIR)/verify_attacks $(BUILD_DIR)/verify_primitives
 
 # Default target
 all: $(BINARIES)
@@ -33,6 +33,12 @@ $(BUILD_DIR)/perft: $(SRC_DIR)/tests/perft.cpp $(SRC_DIR)/*.h
 
 # Computed attacks checked against every entry of the old lookup table.
 $(BUILD_DIR)/verify_attacks: $(SRC_DIR)/tests/verify_attacks.cpp $(SRC_DIR)/*.h
+	@mkdir -p $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -o $@ $<
+
+# Bit-level primitives (rays, mirror, packing, slice keys) against inline naive
+# references. Needs no mapping.txt.
+$(BUILD_DIR)/verify_primitives: $(SRC_DIR)/tests/verify_primitives.cpp $(SRC_DIR)/*.h $(SRC_DIR)/retro/*.h
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 

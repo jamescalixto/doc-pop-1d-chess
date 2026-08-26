@@ -544,7 +544,9 @@ inline std::vector<ScoredMove> scoreMoves(const TableReader &reader, const Game 
         entry.legalInTable = found;
         entry.value = found ? reader.negate(childValue) : VALUE_UNRESOLVED;
 
-        if (withDistance && found && entry.value != VALUE_DRAW &&
+        // A distance-to-mate table already stores exact distances in the value itself,
+        // so the reconstruction search would be redundant work whose answer is ignored.
+        if (withDistance && !reader.tracksDistance() && found && entry.value != VALUE_DRAW &&
             entry.value != VALUE_ILLEGAL && entry.value != VALUE_UNRESOLVED)
         {
             const int childDistance = search.distance(child, !active, MATE_SEARCH_PLIES);

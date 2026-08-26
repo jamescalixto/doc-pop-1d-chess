@@ -3,5 +3,5 @@ import random
 
 
 def move(position):
-    move = random.choice(tuple(Position.get_current_moves(position)))
-    return move
+    moves = Position.get_current_moves(position)
+    return random.choice(moves) if moves else None
