@@ -17,7 +17,7 @@ def move(position):
     moves = Position.get_current_moves(position)  # list of possible moves.
     random.shuffle(moves)  # randomize.
     opponent_attacked_squares = Position.get_attacked_squares(
-        position, Position.opposite_color(active)
+        board, Position.opposite_color(active)
     )  # list of squares opponent is attacking.
 
     def move_score(m):
@@ -31,5 +31,5 @@ def move(position):
         else:
             return target_value
 
-    moves = sorted(moves, key=lambda m: move_score(m), reverse=False)
+    moves = sorted(moves, key=lambda m: move_score(m), reverse=True)
     return moves[0]

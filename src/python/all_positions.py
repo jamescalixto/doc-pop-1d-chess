@@ -9,7 +9,7 @@ def position_to_state(position):
 
 
 def state_to_position(tup):
-    return " ".join((tup[0], tup[1], 0, 0))
+    return " ".join((tup[0], tup[1], "0", "0"))
 
 
 def explore(max_level):
@@ -20,14 +20,8 @@ def explore(max_level):
     seen_states = set()
     current_level = 0
     states = {position_to_state(Position.START_POSITION)}
-    next_states = set()
-
-    @functools.lru_cache(maxsize=1)  # avoid double call.
-    def is_candidate(state):
-        return state not in seen_states and state not in next_states
 
     while len(states) > 0 and current_level < max_level:
-        active = "w" if current_level % 2 == 0 else "b"
         seen_states = seen_states.union(states)
         next_states = {
             (
@@ -36,10 +30,8 @@ def explore(max_level):
             )
             for (board, active) in states
             for next_move in Position.get_moves(board, active)
-            if is_candidate(Position.apply_move_board(board, next_move))
         }
-        states = next_states
-        next_states = set()
+        states = {s for s in next_states if s not in seen_states}
         current_level += 1
         print(
             "# positions reachable after {} halfmoves = {}".format(
@@ -49,5 +41,5 @@ def explore(max_level):
     print("No more traversable positions after this depth.")
 
 
-# cProfile.run("explore(5)")
-explore(18)
+if __name__ == "__main__":
+    explore(6)

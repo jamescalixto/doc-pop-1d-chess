@@ -6,7 +6,7 @@
 # text line.
 #
 # A record contains four fields, separated by a space. The fields are:
-#   1. Piece placement with white starting on the left. Eeach piece is identified by a
+#   1. Piece placement with white starting on the left. Each piece is identified by a
 #       single letter (identical to FEN); i.e., P = pawn, N = knight, B = bishop, R =
 #       rook, Q = queen, K = king. White pieces are denoted using uppercase letters and
 #       black pieces use lowercase. Empty spaces are individually noted using periods
@@ -15,7 +15,7 @@
 #   3. Halfmove clock; i.e., the number of halfmoves since the last capture or pawn
 #       advance, used for the fifty-move rule.
 #   4. Fullmove number; i.e., the number of the full move. It starts at 1 and is
-#       increment after black's move.
+#       incremented after black's move.
 # Note that castling and en passant fields, which are in FEN notation, are excluded due
 # to their irrelevance. Promotion is also impossible, as a pawn has no way around the
 # opponent king. Since promotion is impossible, there is a maximum of one of each piece per
@@ -23,8 +23,8 @@
 #
 # The start position is "KQRBNP....pnbrqk w 0 1".
 #
-# Moves are specified as a tuple of (start, end) square. There are 14 squares which are
-# 0-indexed, so squares are 0 through 13 inclusive. There is no special notation for a
+# Moves are specified as a tuple of (start, end) square. There are 16 squares which are
+# 0-indexed, so squares are 0 through 15 inclusive. There is no special notation for a
 # capture.
 
 BOARD_SIZE = 16  # number of squares on the board.

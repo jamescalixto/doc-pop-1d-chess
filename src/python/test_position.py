@@ -124,16 +124,26 @@ def test_is_in_check():
 
 
 def test_get_moves():
-    assert True
+    moves_w = set(Position.get_moves("KQRBNP....pnbrqk", "w"))
+    assert moves_w == {(5, 6), (5, 7), (4, 6), (4, 7)}
+    moves_b = set(Position.get_moves("KQRBNP....pnbrqk", "b"))
+    assert moves_b == {(10, 9), (10, 8), (11, 9), (11, 8)}
 
 
 def test_get_current_moves():
-    assert True
+    moves = set(Position.get_current_moves(Position.START_POSITION))
+    assert moves == {(5, 6), (5, 7), (4, 6), (4, 7)}
 
 
 def test_apply_move_board():
-    assert True
+    new_board = Position.apply_move_board("KQRBNP....pnbrqk", (5, 6))
+    assert new_board == "KQRBN.P...pnbrqk"
 
 
 def test_apply_move():
-    assert True
+    pos1 = Position.apply_move("KQRBNP....pnbrqk w 0 1", (5, 6))
+    assert pos1 == "KQRBN.P...pnbrqk b 0 1"
+    pos2 = Position.apply_move("KQRBNP....pnbrqk w 0 1", (4, 6))
+    assert pos2 == "KQRB.PN...pnbrqk b 1 1"
+    pos3 = Position.apply_move("KQRBN.P...pnbrqk b 0 1", (10, 9))
+    assert pos3 == "KQRBN.P..p.nbrqk w 0 2"

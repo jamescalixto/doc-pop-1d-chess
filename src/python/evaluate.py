@@ -78,13 +78,17 @@ def score_position(
     next_move_heuristic=lambda position, _: Position.get_current_moves(
         position
     ),  # heuristic to return moves in order of preference.
-    movelist=[],  # list of moves made so far.
-    seen_boards=Counter(),  # counter of seen boards; used for threefold repetition.
+    movelist=None,  # list of moves made so far.
+    seen_boards=None,  # counter of seen boards; used for threefold repetition.
     find_shortest_line=True,  # prioritize finding shortest line (longer).
 ):
     """Given a position, score it (assuming that the opponent plays optimally) and
     return the path to that end state. Uses breadth-first-search recursively with a
     depth limit, after which it estimates the position using an estimator function."""
+    if movelist is None:
+        movelist = []
+    if seen_boards is None:
+        seen_boards = Counter()
     board, active, halfmove, fullmove = position.split(" ")
 
     # Set starting player in the initial call so we know who to optimize for. This
@@ -208,7 +212,7 @@ def test_next_moves(position, max_depth=16):
         (
             next_move,
             Position.apply_move(position, next_move),
-            score_position(position, max_depth),
+            score_position(Position.apply_move(position, next_move), max_depth=max_depth),
         )
         for next_move in next_moves
     ]  # get move/position/score tuples.
@@ -216,5 +220,5 @@ def test_next_moves(position, max_depth=16):
 
     print(position)
     for next_tuple in next_tuples:
-        print(next_tuple[2].ljust(6, " "), next_tuple[1], "after", next_tuple[0])
+        print(str(next_tuple[2][0]).ljust(6, " "), next_tuple[1], "after", next_tuple[0])
     print("")

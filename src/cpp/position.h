@@ -24,7 +24,7 @@ Edwards Notation). I will call this FENCE notation — short for Forsyth-Edwards
 A "record" contains a particular game position, all in a single text line.
 
 A record contains four fields, separated by a space. The fields are:
-  1. Piece placement with white starting on the left. Eeach piece is identified by a
+  1. Piece placement with white starting on the left. Each piece is identified by a
     single letter (identical to FEN); i.e., P = pawn, N = knight, B = bishop, R =
     rook, Q = queen, K = king. White pieces are denoted using uppercase letters and
     black pieces use lowercase. Empty spaces are individually noted using periods
