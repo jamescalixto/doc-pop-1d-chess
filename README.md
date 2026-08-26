@@ -42,7 +42,7 @@ Correctness.
 
 ```
 make          # main, explore, retro
-make tests    # perft, verify_attacks (these need the retired mapping.txt)
+make tests    # perft, verify_attacks (need the retired mapping.txt), verify_primitives
 ```
 
 Requires a C++23 compiler. There are no dependencies and nothing is read from disk.
@@ -277,6 +277,12 @@ And the machinery underneath:
 
 - `verify_attacks` reproduces all 3,605,392 entries of the original `mapping.txt` attack
   table from computed attacks.
+- `verify_primitives` checks the bit-level machinery against inline naive references:
+  every slider attack set for all 16 × 65,536 (square, occupancy) pairs — including
+  inputs `mapping.txt` never held — plus mirror involution, packing, FENCE round-trips
+  and slice-key laws over 200,000 random boards. **0 failures.**
+- Checkpoint resume was tested by killing a solve mid-run and tearing the file
+  mid-record: the resumed output is **byte-identical** to a clean solve.
 - `perft` compares the current move generator against the original implementation at
   every node of the tree to depth 12 (86.9M positions) plus 20,000 random games.
   `perft(12) = 578,736,921`.
