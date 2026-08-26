@@ -5,3 +5,4 @@
 *.dSYM
 **/compiled/
 *.bin
+.DS_Store
